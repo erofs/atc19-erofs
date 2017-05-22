@@ -717,6 +717,7 @@ static int hci_ti_probe(struct serdev_device *serdev)
 	struct hci_uart *hu;
 	struct ll_device *lldev;
 	u32 max_speed = 3000000;
+	int err;
 
 	lldev = devm_kzalloc(&serdev->dev, sizeof(struct ll_device), GFP_KERNEL);
 	if (!lldev)
@@ -729,6 +730,12 @@ static int hci_ti_probe(struct serdev_device *serdev)
 	lldev->enable_gpio = devm_gpiod_get_optional(&serdev->dev, "enable", GPIOD_OUT_LOW);
 	if (IS_ERR(lldev->enable_gpio))
 		return PTR_ERR(lldev->enable_gpio);
+
+	err = gpiod_direction_output(lldev->enable_gpio, 0);
+	if (unlikely(err)) {
+		bt_dev_err(hu->hdev, "unable to configure enable-gpio");
+		return err;
+	}
 
 	lldev->ext_clk = devm_clk_get(&serdev->dev, "ext_clock");
 	if (IS_ERR(lldev->ext_clk) && PTR_ERR(lldev->ext_clk) != -ENOENT)
