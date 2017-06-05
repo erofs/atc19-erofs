@@ -1191,9 +1191,10 @@
 			clock-names = "apb_pclk";
 		};
 
-		tsensor: tsensor {
-			compatible = "hisilicon,hi3660-thermal";
+		tsensor: tsensor@fff30000 {
+			compatible = "hisilicon,hi3660-tsensor";
 			reg = <0x0 0xfff30000 0x0 0x1000>;
+			interrupts = <GIC_SPI 145 IRQ_TYPE_LEVEL_HIGH>;
 			#thermal-sensor-cells = <1>;
 		};
 
@@ -1253,11 +1254,11 @@
 
 			cls0: cls0 {
 				polling-delay = <1000>;
-				polling-delay-passive = <100>;
-				sustainable-power = <4500>;
+				polling-delay-passive = <25>;
+				sustainable-power = <4000>;
 
 				/* sensor ID */
-				thermal-sensors = <&tsensor 4>;
+				thermal-sensors = <&tsensor 1>;
 
 				trips {
 					threshold: trip-point@0 {
@@ -1283,6 +1284,11 @@
 						trip = <&target>;
 						contribution = <512>;
 						cooling-device = <&cpu4 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+					};
+					map2 {
+						trip = <&target>;
+						contribution = <1024>;
+						cooling-device = <&gpu THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
 					};
 				};
 			};
