@@ -34,6 +34,7 @@
 #include "core.h"
 #include "gadget.h"
 #include "io.h"
+#include "dwc3-hisi.h"
 
 /**
  * dwc3_gadget_set_test_mode - enables usb2 test modes
@@ -2708,6 +2709,23 @@ static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 	reg = dwc3_readl(dwc->regs, DWC3_DCFG);
 	reg &= ~(DWC3_DCFG_DEVADDR_MASK);
 	dwc3_writel(dwc->regs, DWC3_DCFG, reg);
+}
+
+ATOMIC_NOTIFIER_HEAD(conndone_nh);
+
+int dwc3_conndone_notifier_register(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&conndone_nh, nb);
+}
+
+int dwc3_conndone_notifier_unregister(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&conndone_nh, nb);
+}
+
+static void dwc3_conndone_notify(enum usb_device_speed speed)
+{
+	atomic_notifier_call_chain(&conndone_nh, (unsigned long)speed, NULL);
 }
 
 static void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)

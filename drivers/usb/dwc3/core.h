@@ -752,6 +752,7 @@ struct dwc3_request {
 	unsigned		mapped:1;
 	unsigned		started:1;
 	unsigned		zero:1;
+	unsigned		send_zlp:1;
 };
 
 /*
@@ -761,6 +762,8 @@ struct dwc3_request {
 struct dwc3_scratchpad_array {
 	__le64	dma_adr[DWC3_MAX_HIBER_SCRATCHBUFS];
 };
+
+struct dwc3_otg;
 
 /**
  * struct dwc3 - representation of our controller
@@ -982,10 +985,17 @@ struct dwc3 {
 	u8			lpm_nyet_threshold;
 	u8			hird_threshold;
 
+	struct dwc3_otg *dwc_otg;
 	const char		*hsphy_interface;
 
 	unsigned		connected:1;
 	unsigned		delayed_status:1;
+
+	/* the delayed status may come before notready interrupt,
+	 * in this case, don't wait for delayed status
+	 */
+	unsigned		status_queued:1;
+
 	unsigned		ep0_bounced:1;
 	unsigned		ep0_expect_in:1;
 	unsigned		has_hibernation:1;
@@ -1177,7 +1187,7 @@ struct dwc3_gadget_ep_cmd_params {
 /* prototypes */
 void dwc3_set_mode(struct dwc3 *dwc, u32 mode);
 u32 dwc3_core_fifo_space(struct dwc3_ep *dep, u8 type);
-
+void dwc3_set_prtcap(struct dwc3 *dwc, u32 mode);
 /* check whether we are on the DWC_usb3 core */
 static inline bool dwc3_is_usb3(struct dwc3 *dwc)
 {
@@ -1211,6 +1221,8 @@ int dwc3_gadget_set_link_state(struct dwc3 *dwc, enum dwc3_link_state state);
 int dwc3_send_gadget_ep_cmd(struct dwc3_ep *dep, unsigned cmd,
 		struct dwc3_gadget_ep_cmd_params *params);
 int dwc3_send_gadget_generic_command(struct dwc3 *dwc, unsigned cmd, u32 param);
+int dwc3_conndone_notifier_register(struct notifier_block *nb);
+int dwc3_conndone_notifier_unregister(struct notifier_block *nb);
 #else
 static inline int dwc3_gadget_init(struct dwc3 *dwc)
 { return 0; }
@@ -1229,6 +1241,10 @@ static inline int dwc3_send_gadget_ep_cmd(struct dwc3_ep *dep, unsigned cmd,
 { return 0; }
 static inline int dwc3_send_gadget_generic_command(struct dwc3 *dwc,
 		int cmd, u32 param)
+{ return 0; }
+static inline int dwc3_conndone_notifier_register(struct notifier_block *nb)
+{ return 0; }
+static inline int dwc3_conndone_notifier_unregister(struct notifier_block *nb)
 { return 0; }
 #endif
 
@@ -1262,6 +1278,9 @@ static inline void dwc3_gadget_process_pending_events(struct dwc3 *dwc)
 {
 }
 #endif /* !IS_ENABLED(CONFIG_USB_DWC3_HOST) */
+
+int dwc3_resume_device(struct dwc3 *dwc);
+void dwc3_suspend_device(struct dwc3 *dwc);
 
 #if IS_ENABLED(CONFIG_USB_DWC3_ULPI)
 int dwc3_ulpi_init(struct dwc3 *dwc);

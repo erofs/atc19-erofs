@@ -106,4 +106,19 @@ config USB_DWC3_ST
 	  inside (i.e. STiH407).
 	  Say 'Y' or 'M' if you have one such device.
 
+config USB_DWC3_HISI
+	tristate "Hisilicon Platforms"
+	select USB_DWC3_OTG
+	default USB_DWC3
+	help
+	  Support of USB2/3 functionality in hisilicon platforms,
+	  Say 'Y' or 'M' here if you have one such device.
+	  Use for hisilicon device and it will select USB_DWC3_OTG
+	  if Say 'Y' or 'M' here.
+
+config USB_DWC3_OTG
+	bool "Enable DWC3 OTG"
+	default n
+	help
+	  Say Y here to enable DWC3 OTG feature.
 endif
