@@ -192,6 +192,16 @@ config THERMAL_EMULATION
 	  because userland can easily disable the thermal policy by simply
 	  flooding this sysfs node with low temperature values.
 
+config HI3660_THERMAL
+	tristate "Hi3660 thermal driver"
+	depends on ARCH_HISI || COMPILE_TEST
+	depends on HAS_IOMEM
+	depends on OF
+	default y
+	help
+	  Enable this to plug Hi3660 thermal driver into the Linux thermal
+	  framework.
+
 config HISI_THERMAL
 	tristate "Hisilicon thermal driver"
 	depends on ARCH_HISI || COMPILE_TEST
