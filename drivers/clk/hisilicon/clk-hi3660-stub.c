@@ -83,7 +83,17 @@ static struct hi3660_stub_clk hisi_stub_clk[HI3660_CLK_STUB_NUM] = {
 	[HI3660_CLK_STUB_DDR] = {
 		.id = HI3660_CLK_STUB_DDR,
 		.clk_name = "clk-ddrc",
+		.set_rate_cmd = 0x0004030A,
+	},
+	[HI3660_CLK_STUB_DDR_VOTE] = {
+		.id = HI3660_CLK_STUB_DDR_VOTE,
+		.clk_name = "clk-ddrc-vote",
 		.set_rate_cmd = 0x00040309,
+	},
+	[HI3660_CLK_STUB_DDR_LIMIT] = {
+		.id = HI3660_CLK_STUB_DDR_LIMIT,
+		.clk_name = "clk-ddrc-limit",
+		.set_rate_cmd = 0x00040308,
 	},
 };
 
@@ -93,7 +103,7 @@ static unsigned long hi3660_stub_clk_recalc_rate(
 	struct hi3660_stub_clk *stub_clk =
 		container_of(hw, struct hi3660_stub_clk, hw);
 
-	if (stub_clk->id < HI3660_CLK_STUB_NUM)
+	if (stub_clk->id < HI3660_CLK_STUB_DDR_VOTE)
 		stub_clk->rate = readl(freq_reg + (stub_clk->id << 2)) * MHZ;
 
 	pr_debug("get rate%d;%u\n", stub_clk->id, stub_clk->rate);
