@@ -317,6 +317,21 @@
 					  IRQ_TYPE_LEVEL_LOW)>;
 	};
 
+	ddr_devfreq {
+		compatible = "hisilicon,hi3660-ddrfreq";
+		clocks = <&stub_clock HI3660_CLK_STUB_DDR_VOTE>,
+			<&stub_clock HI3660_CLK_STUB_DDR>,
+			<&stub_clock HI3660_CLK_STUB_DDR_LIMIT>;
+		operating-points = <
+			/* kHz uV */
+			400000  0
+			685000  0
+			1067000 0
+			1244000 0
+			1866000 0
+		>;
+	};
+
 	soc {
 		compatible = "simple-bus";
 		#address-cells = <2>;
