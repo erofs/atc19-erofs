@@ -113,6 +113,16 @@ config ARM_RK3399_DMC_DEVFREQ
           It sets the frequency for the memory controller and reads the usage counts
           from hardware.
 
+config HISI_DDR_DEVFREQ
+       tristate "HISI DDR DEVFREQ Driver"
+       depends on ARCH_HISI
+       select DEVFREQ_GOV_SIMPLE_ONDEMAND
+       select PM_OPP
+       help
+         This adds the DEVFREQ driver for the Hisi family of SoCs.
+         It adjusts ddr frequency according to pm qos memory bandwidth
+         request.
+
 source "drivers/devfreq/event/Kconfig"
 
 endif # PM_DEVFREQ
