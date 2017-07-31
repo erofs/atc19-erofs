@@ -49,6 +49,9 @@
 #define TIMING_MODE     3
 #define TIMING_CFG_NUM 10
 
+#define PULL_DOWN BIT(1)
+#define PULL_UP   BIT(0)
+
 #define NUM_PHASES (40)
 
 #define ENABLE_SHIFT_MIN_SMPL (4)
@@ -406,6 +409,8 @@ static int dw_mci_hi3660_switch_voltage(struct mmc_host *mmc,
 					struct mmc_ios *ios)
 {
 	int ret = 0;
+	int min_uv = 0;
+	int max_uv = 0;
 	struct dw_mci_slot *slot = mmc_priv(mmc);
 	struct k3_priv *priv;
 	struct dw_mci *host;
@@ -419,21 +424,29 @@ static int dw_mci_hi3660_switch_voltage(struct mmc_host *mmc,
 	if (priv->ctrl_id == DWMMC_SDIO_ID)
 		return 0;
 
-	if (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_330)
+	if (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_330) {
 		ret = dw_mci_set_sel18(host, 0);
-	else if (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_180)
-		ret = dw_mci_set_sel18(host, 1);
-	if (ret)
-		return ret;
-
-	if (!IS_ERR(mmc->supply.vqmmc)) {
-		ret = mmc_regulator_set_vqmmc(mmc, ios);
-		if (ret) {
-			dev_err(host->dev, "Regulator set error %d\n", ret);
+		if (ret)
 			return ret;
-		}
+		min_uv = 2950000;
+		max_uv = 2950000;
+	} else if (ios->signal_voltage == MMC_SIGNAL_VOLTAGE_180) {
+		ret = dw_mci_set_sel18(host, 1);
+		if (ret)
+			return ret;
+		min_uv = 1800000;
+		max_uv = 1800000;
 	}
 
+	if (IS_ERR_OR_NULL(mmc->supply.vqmmc))
+		return 0;
+
+	ret = regulator_set_voltage(mmc->supply.vqmmc, min_uv, max_uv);
+	if (ret) {
+		dev_err(host->dev, "Regulator set error %d: %d - %d\n",
+			ret, min_uv, max_uv);
+		return ret;
+	}
 	return 0;
 }
 
