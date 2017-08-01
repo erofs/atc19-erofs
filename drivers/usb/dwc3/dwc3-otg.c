@@ -245,8 +245,10 @@ int dwc3_otg_work(struct dwc3_otg *dwc_otg, int evt)
 	switch (evt) {
 	case DWC3_OTG_EVT_ID_SET:
 		dwc3_otg_stop_host(dwc_otg);
+		dwc3_suspend_device(dwc_otg->dwc);
 		break;
 	case DWC3_OTG_EVT_ID_CLEAR:
+		ret = dwc3_resume_device(dwc_otg->dwc);
 		if (ret) {
 			pr_err("%s: resume device failed!\n", __func__);
 			return ret;
@@ -254,10 +256,12 @@ int dwc3_otg_work(struct dwc3_otg *dwc_otg, int evt)
 		ret = dwc3_otg_start_host(dwc_otg);
 		if (ret) {
 			pr_err("%s: start host failed!\n", __func__);
+			dwc3_suspend_device(dwc_otg->dwc);
 			return ret;
 		}
 		break;
 	case DWC3_OTG_EVT_VBUS_SET:
+		ret = dwc3_resume_device(dwc_otg->dwc);
 		if (ret) {
 			pr_err("%s: resume device failed!\n", __func__);
 			return ret;
@@ -265,11 +269,13 @@ int dwc3_otg_work(struct dwc3_otg *dwc_otg, int evt)
 		ret = dwc3_otg_start_peripheral(dwc_otg);
 		if (ret) {
 			pr_err("%s: start peripheral failed!\n", __func__);
+			dwc3_suspend_device(dwc_otg->dwc);
 			return ret;
 		}
 		break;
 	case DWC3_OTG_EVT_VBUS_CLEAR:
 		ret = dwc3_otg_stop_peripheral(dwc_otg);
+		dwc3_suspend_device(dwc_otg->dwc);
 		break;
 	default:
 		break;
