@@ -1113,7 +1113,7 @@
 			compatible = "hisilicon,hi3660-dwc3";
 			reg = <0x0 0xff200000 0x0 0x1000 0x0 0xff100000 0x0 0x100000>;
 			ranges;
-			bc_again_flag = <1>;
+			bc_again_flag = <0>;
 
 			clocks = <&crg_ctrl HI3660_CLK_ABB_USB>,
 				 <&crg_ctrl HI3660_ACLK_GATE_USB3OTG>;
