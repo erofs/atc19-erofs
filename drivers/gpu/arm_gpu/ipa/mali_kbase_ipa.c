@@ -456,6 +456,8 @@ static u32 get_static_power_locked(struct kbase_device *kbdev,
 	return power;
 }
 
+
+
 #ifdef CONFIG_MALI_PWRSOFT_765
 static unsigned long kbase_get_static_power(struct devfreq *df,
 					    unsigned long voltage)
