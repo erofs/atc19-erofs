@@ -535,7 +535,7 @@ static int rt1711_init_alert(struct tcpc_device *tcpc)
 	rt1711_write_word(chip->client, TCPC_V10_REG_ALERT, 0xffff);
 
 	len = strlen(chip->tcpc_desc->name);
-	name = kzalloc(sizeof(len + 5), GFP_KERNEL);
+	name = kzalloc(len + 5, GFP_KERNEL);
 	sprintf(name, "%s-IRQ", chip->tcpc_desc->name);
 
 	pr_info("%s name = %s\n", __func__, chip->tcpc_desc->name);
