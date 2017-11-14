@@ -20,10 +20,123 @@
 		serial1 = &uart1; /* BT UART */
 		serial2 = &uart2; /* LS Expansion UART0 */
 		serial3 = &uart3; /* LS Expansion UART1 */
+		spi0	= &spi0;
 	};
 
 	chosen {
 		stdout-path = "serial3:115200n8";
+	};
+
+	overlay_mgr {
+		compatible = "linux,overlay_manager";
+		hardware_cfg_innolux_panel {
+			overlay_0 {
+				fragment@0 {
+					target-path="/soc/dsi@f4107800";
+					__overlay__ { /* For panel reg's value should >= 1 */
+						#address-cells = <1>;
+						#size-cells = <0>;
+						ports {
+							#address-cells = <1>;
+							#size-cells = <0>;
+							/* 1 for output port */
+							port@1 {
+								#address-cells = <1>;
+								#size-cells = <0>;
+								reg = <1>;
+								dsi_out1: endpoint@1 {
+									reg = <1>;
+									remote-endpoint = <&panel0_in>;
+								};
+							};
+						};
+						panel@1 {
+							compatible = "innolux,n070icn-pb1";
+							reg = <1>;
+							power-on-delay= <50>;
+							reset-delay = <100>;
+							init-delay = <100>;
+							panel-width-mm = <58>;
+							panel-height-mm = <103>;
+							pwr-en-gpio = <&gpio2 1 0>;
+							bl-en-gpio = <&gpio2 3 0>;
+							pwm-gpio = <&gpio12 7 0>;
+
+							port {
+								panel0_in: endpoint {
+									remote-endpoint = <&dsi_out1>;
+								};
+							};
+						};
+					};
+				};
+			};
+		};
+		hardware_cfg_spidev0 {
+			overlay_0 {
+				fragment@0 {
+					target-path="/soc/spi@f7106000/spidev@0";
+					__overlay__ {
+						status = "ok";
+					};
+				};
+			};
+		};
+		hardware_cfg_spidev_dma0 {
+			overlay_0 {
+				fragment@0 {
+					target-path="/soc/spi@f7106000/spidev_dma@0";
+					__overlay__ {
+						status = "ok";
+					};
+				};
+			};
+		};
+		hardware_cfg_neonkey {
+			overlay_0 {
+				fragment@0 {
+					target-path="/soc/spi@f7106000/sensorhub@0";
+					__overlay__ {
+						status = "ok";
+					};
+				};
+			};
+		};
+		hardware_cfg_argonkey {
+			overlay_0 {
+				fragment@0 {
+					target-path="/soc/spi@f7106000/argonkey@0";
+					__overlay__ {
+						status = "ok";
+					};
+				};
+			};
+		};
+		hardware_cfg_disable_bt {
+			overlay_0 {
+				fragment@0 {
+					target-path="/soc/uart@f7111000/bluetooth";
+					__overlay__ {
+						status = "disabled";
+					};
+				};
+			};
+		};
+		hardware_cfg_cs_sd_qb {
+			overlay_0 {
+				fragment@0 { /* Select SD from Quick Bus */
+					target-path="/soc/gpio@f7020000";
+					__overlay__ {
+						sd_sel {
+							gpio-hog;
+							gpios = <4 0>;
+							output-high;
+							line-name = "gpio_sd_sel";
+						};
+					};
+				};
+			};
+		};
 	};
 
 	/*
@@ -543,5 +656,96 @@
 				dai-format = "i2s";
 			};
 		};
+	};
+};
+
+&spi0 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "ok";
+
+	/* the two spidev below cannot be both enabled at the same time */
+	spidev@0 {
+		compatible = "rohm,dh2228fv";
+		spi-max-frequency = <500000>;
+		reg = <0>;
+		status = "disabled";
+	};
+
+	/*
+	 * To enable the DMA on a slave of spi0, add the lines
+         * pl022,com-mode = <2>;
+         * pl022,rx-level-trig = <1>;
+	 * in the DT node of the slave,
+         */
+	spidev_dma@0 {
+		compatible = "rohm,dh2228fv";
+		spi-max-frequency = <500000>;
+		reg = <0>;
+		pl022,com-mode = <2>;
+		pl022,rx-level-trig = <1>;
+		status = "disabled";
+	};
+
+	sensorhub@0 {
+		compatible = "nanohub";
+		reg = <0>;
+		spi-max-frequency = <500000>;
+		spi-cpol;
+		spi-cpha;
+
+		sensorhub,nreset-gpio = <&gpio0 6 0>;
+		sensorhub,boot0-gpio = <&gpio2 2 0>; /* Fake */
+		sensorhub,wakeup-gpio = <&gpio2 0 0>; /* Gpio2_0 -> PB9 */
+		sensorhub,irq1-gpio = <&gpio2 1 0>;   /* Gpio2_1 -> PB5 */
+		sensorhub,spi-cs-gpio = <&gpio6 2 0>;
+		sensorhub,bl-addr = <0x08000000>;
+		sensorhub,kernel-addr = <0x0800C000>;
+		sensorhub,num-flash-banks = <4>;
+		sensorhub,flash-banks =		<0 0x08000000 0x04000>,
+						<3 0x0800C000 0x04000>,
+						<4 0x08010000 0x10000>,
+						<5 0x08020000 0x20000>;
+		sensorhub,shared-addr = <0x08040000>;
+		sensorhub,num-shared-flash-banks = <2>;
+		sensorhub,shared-flash-banks =	<6 0x08040000 0x20000>,
+						<7 0x08060000 0x20000>;
+		status = "disabled";
+	};
+
+	argonkey@0 {
+		compatible = "nanohub";
+		reg = <0>;
+		pl022,com-mode = <2>;
+		pl022,rx-level-trig = <1>;
+		spi-max-frequency = <7500000>;
+
+		interrupt-parent = <&gpio2>;
+		interrupts = <0 0x2>;
+		sensorhub,irq1-gpio = <&gpio2 0 0>;
+		sensorhub,irq2-gpio = <&gpio10 2 0>;
+		sensorhub,wakeup-gpio = <&gpio9 1 0>;
+		sensorhub,spi-cs-gpio = <&gpio6 7 0>;
+		sensorhub,nreset-gpio = <&gpio2 3 0>;
+		sensorhub,boot0-gpio = <&gpio2 7 0>;
+		sensorhub,bl-addr = <0x08000000>;
+		sensorhub,kernel-addr = <0x0800C000>;
+		sensorhub,num-flash-banks = <4>;
+		sensorhub,flash-banks =
+			<0 0x08000000 0x04000>,
+			<3 0x0800C000 0x04000>,
+			<4 0x08010000 0x10000>,
+			<5 0x08020000 0x20000>;
+		sensorhub,shared-addr = <0x08040000>;
+		sensorhub,num-shared-flash-banks = <6>;
+		sensorhub,shared-flash-banks =
+			<6 0x08040000 0x20000>,
+			<7 0x08060000 0x20000>,
+			<8 0x08080000 0x20000>,
+			<9 0x080A0000 0x20000>,
+			<10 0x080C0000 0x20000>,
+			<11 0x080E0000 0x20000>;
+
+		status = "disabled";
 	};
 };
