@@ -149,4 +149,4 @@ static int __init of_overlay_mgr_init(void)
 	return platform_driver_register(&of_overlay_mgr_driver);
 }
 
-postcore_initcall(of_overlay_mgr_init);
+subsys_initcall(of_overlay_mgr_init);
