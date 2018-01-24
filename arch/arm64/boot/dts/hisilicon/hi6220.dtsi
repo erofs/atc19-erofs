@@ -117,6 +117,7 @@
 			next-level-cache = <&CLUSTER0_L2>;
 			operating-points-v2 = <&cpu_opp_table>;
 			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP>;
+			sched-energy-costs = <&CPU_COST &CLUSTER_COST &SYSTEM_COST>;
 			capacity-dmips-mhz = <1024>;
 		};
 
@@ -140,6 +141,7 @@
 			next-level-cache = <&CLUSTER1_L2>;
 			operating-points-v2 = <&cpu_opp_table>;
 			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP>;
+			sched-energy-costs = <&CPU_COST &CLUSTER_COST &SYSTEM_COST>;
 			capacity-dmips-mhz = <1024>;
 		};
 
