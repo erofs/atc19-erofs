@@ -37,6 +37,22 @@
 		stdout-path = "serial6:115200n8";
 	};
 
+	fiq-debugger {
+		compatible = "android,irq-hi6220-uart";
+		reg = <0x0 0xfff32000 0x0 0x1000>;
+		interrupts = <GIC_SPI 79 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "fiq", "signal";
+	};
+
+	uart_overlay@0 {
+		fragment@0 {
+			target-path="/soc/serial@fff32000";
+			__overlay__ {
+				status = "disabled";
+			};
+		};
+	};
+
 	memory@0 {
 		device_type = "memory";
 		/* rewrite this at bootloader */
