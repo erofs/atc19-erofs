@@ -195,7 +195,7 @@
 			label = "bt_active";
 			gpios = <&gpio25 7 0>;
 			/* gpio_207_user_led1 */
-			linux,default-trigger = "hci0-power";
+			linux,default-trigger = "hci0rx";
 			default-state = "off";
 		};
 	};
