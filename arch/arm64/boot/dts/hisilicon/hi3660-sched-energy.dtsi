@@ -7,6 +7,17 @@
  */
 
 energy-costs {
+	SYSTEM_COST: system-cost0 {
+		busy-cost-data = <
+			1024   0
+		>;
+		idle-cost-data = <
+			0
+			0
+			0
+			0
+		>;
+	};
 	CPU_COST_A72: core-cost0 {
 		busy-cost-data = <
 			390    404

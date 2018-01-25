@@ -68,7 +68,7 @@
 			cooling-max-level = <0>;
 			#cooling-cells = <2>; /* min followed by max */
 			dynamic-power-coefficient = <110>;
-			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53>;
+			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53 &SYSTEM_COST>;
 		};
 
 		cpu1: cpu@1 {
@@ -80,7 +80,7 @@
 			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP_0>;
 			clocks = <&stub_clock HI3660_CLK_STUB_CLUSTER0>;
 			operating-points-v2 = <&cluster0_opp>;
-			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53>;
+			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53 &SYSTEM_COST>;
 		};
 
 		cpu2: cpu@2 {
@@ -92,7 +92,7 @@
 			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP_0>;
 			clocks = <&stub_clock HI3660_CLK_STUB_CLUSTER0>;
 			operating-points-v2 = <&cluster0_opp>;
-			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53>;
+			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53 &SYSTEM_COST>;
 		};
 
 		cpu3: cpu@3 {
@@ -104,7 +104,7 @@
 			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP_0>;
 			clocks = <&stub_clock HI3660_CLK_STUB_CLUSTER0>;
 			operating-points-v2 = <&cluster0_opp>;
-			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53>;
+			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53 &SYSTEM_COST>;
 		};
 
 		cpu4: cpu@100 {
@@ -120,7 +120,7 @@
 			cooling-max-level = <0>;
 			#cooling-cells = <2>; /* min followed by max */
 			dynamic-power-coefficient = <550>;
-			sched-energy-costs = <&CPU_COST_A72 &CLUSTER_COST_A72>;
+			sched-energy-costs = <&CPU_COST_A72 &CLUSTER_COST_A72 &SYSTEM_COST>;
 		};
 
 		cpu5: cpu@101 {
@@ -132,7 +132,7 @@
 			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP_1>;
 			clocks = <&stub_clock HI3660_CLK_STUB_CLUSTER1>;
 			operating-points-v2 = <&cluster1_opp>;
-			sched-energy-costs = <&CPU_COST_A72 &CLUSTER_COST_A72>;
+			sched-energy-costs = <&CPU_COST_A72 &CLUSTER_COST_A72 &SYSTEM_COST>;
 		};
 
 		cpu6: cpu@102 {
@@ -144,7 +144,7 @@
 			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP_1>;
 			clocks = <&stub_clock HI3660_CLK_STUB_CLUSTER1>;
 			operating-points-v2 = <&cluster1_opp>;
-			sched-energy-costs = <&CPU_COST_A72 &CLUSTER_COST_A72>;
+			sched-energy-costs = <&CPU_COST_A72 &CLUSTER_COST_A72 &SYSTEM_COST>;
 		};
 
 		cpu7: cpu@103 {
@@ -156,7 +156,7 @@
 			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP_1>;
 			clocks = <&stub_clock HI3660_CLK_STUB_CLUSTER1>;
 			operating-points-v2 = <&cluster1_opp>;
-			sched-energy-costs = <&CPU_COST_A72 &CLUSTER_COST_A72>;
+			sched-energy-costs = <&CPU_COST_A72 &CLUSTER_COST_A72 &SYSTEM_COST>;
 		};
 
 		idle-states {
