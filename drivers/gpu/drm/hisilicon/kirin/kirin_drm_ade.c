@@ -204,7 +204,7 @@ static void ade_set_pix_clk(struct ade_hw_ctx *ctx,
 	 */
 	ret = clk_set_rate(ctx->ade_pix_clk, clk_Hz);
 	if (ret)
-		DRM_ERROR("failed to set pixel clk %dHz (%d)\n", clk_Hz, ret);
+		DRM_WARN_ONCE("failed to set pixel clk %dHz (%d)\n", clk_Hz, ret);
 	adj_mode->clock = clk_get_rate(ctx->ade_pix_clk) / 1000;
 }
 
