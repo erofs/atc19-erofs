@@ -273,7 +273,7 @@ static void kbase_sync_fence_info_get(struct dma_fence *fence,
 	 * 1 : signaled
 	 */
 	if (dma_fence_is_signaled(fence)) {
-		if (fence->error< 0)
+		if (fence->error < 0)
 			info->status = fence->error; /* signaled with error */
 		else
 			info->status = 1; /* signaled with success */

@@ -19,6 +19,8 @@ mali_kbase-y += \
 
 mali_kbase-$(CONFIG_DEBUG_FS) += ipa/mali_kbase_ipa_debugfs.o
 
+
 mali_kbase-y += \
 	ipa/mali_kbase_ipa_vinstr_g71.o \
 	ipa/mali_kbase_ipa_vinstr_common.o
+
