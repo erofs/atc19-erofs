@@ -108,6 +108,15 @@ config DRM_FBDEV_OVERALLOC
 	  is 100. Typical values for double buffering will be 200,
 	  triple buffering 300.
 
+config FBIOGET_DMABUF
+	bool "FBIOGET_DMABUF implementation for ARM gralloc"
+	depends on DRM_GEM_CMA_HELPER
+	help
+	  Enables FBIOGET_DMABUF ioctl that ARMs gralloc uses
+	  in order to export the FBDEV buffer as a dmabuf.
+	  This is a hack, only needed until we switch to
+	  using drm_hwcomposer
+
 config DRM_LOAD_EDID_FIRMWARE
 	bool "Allow to specify an EDID data set instead of probing for it"
 	depends on DRM_KMS_HELPER

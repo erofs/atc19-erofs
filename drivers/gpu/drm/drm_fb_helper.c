@@ -41,6 +41,9 @@
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
 
+#include <linux/dma-buf.h>
+#include <drm/drm_gem_framebuffer_helper.h>
+
 #include "drm_crtc_helper_internal.h"
 
 static bool drm_fbdev_emulation = true;
@@ -1423,6 +1426,51 @@ out:
 }
 EXPORT_SYMBOL(drm_fb_helper_setcmap);
 
+
+#ifdef CONFIG_FBIOGET_DMABUF
+
+struct fb_dmabuf_export {
+    __u32 fd;
+    __u32 flags;
+};
+#define FBIOGET_DMABUF  _IOR('F', 0x21, struct fb_dmabuf_export)
+static int fbioget_dmabuf_export(struct fb_info *info, void __user *argp)
+{
+	int ret;
+	struct fb_dmabuf_export dmabuf_export;
+	struct drm_fb_helper *helper = info->par;
+	struct drm_device *dev = helper->dev;
+	struct drm_framebuffer *fb = helper->fb;
+	struct drm_gem_object *gem = drm_gem_fb_get_obj(fb, 0);
+	struct dma_buf *dmabuf;
+	__u32 fd;
+
+	ret = copy_from_user(&dmabuf_export, argp, sizeof(struct fb_dmabuf_export));
+	if (ret) {
+		DRM_ERROR("copy for user failed!ret=%d.\n", ret);
+		ret = -EINVAL;
+	} else {
+		dmabuf_export.flags = O_RDWR;
+		dmabuf = drm_gem_prime_export(dev, gem, O_RDWR);
+		fd = dma_buf_fd(dmabuf, O_CLOEXEC);
+	        if (fd < 0)
+			dma_buf_put(dmabuf);
+		dmabuf_export.fd = fd;
+		if (dmabuf_export.fd < 0) {
+			DRM_ERROR("failed to ion_share!\n");
+		}
+
+		ret = copy_to_user(argp, &dmabuf_export, sizeof(struct fb_dmabuf_export));
+		if (ret) {
+			DRM_ERROR("copy to user failed!ret=%d.", ret);
+			ret = -EFAULT;
+		}
+	}
+
+	return ret;
+}
+#endif
+
 /**
  * drm_fb_helper_ioctl - legacy ioctl implementation
  * @info: fbdev registered by the helper
@@ -1480,6 +1528,14 @@ int drm_fb_helper_ioctl(struct fb_info *info, unsigned int cmd,
 
 		ret = 0;
 		goto unlock;
+#ifdef CONFIG_FBIOGET_DMABUF
+	case FBIOGET_DMABUF:
+	{
+		void __user *argp = (void __user *)arg;
+		ret = fbioget_dmabuf_export(info, argp);
+		break;
+	}
+#endif
 	default:
 		ret = -ENOTTY;
 	}
