@@ -6,6 +6,7 @@ EXTRA_CMDS=''
 KERNEL_DIR=hikey-linaro
 LINUX_GCC_CROSS_COMPILE_PREBUILTS_BIN=prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin
 FILES="
+arch/arm64/boot/Image.gz-dtb
 arch/arm64/boot/Image
 arch/arm64/boot/Image.gz
 arch/arm64/boot/dts/hisilicon/hi3660-hikey960.dtb
