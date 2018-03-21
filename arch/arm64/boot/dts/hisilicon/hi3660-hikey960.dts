@@ -96,6 +96,16 @@
 				};
 			};
 		};
+		hardware_cfg_disable_wlan {
+			overlay_0 {
+				fragment@0 {
+					target-path="/soc/dwmmc2@ff3ff000";
+					__overlay__ {
+						status = "disabled";
+					};
+				};
+			};
+		};
 	};
 
 	memory@0 {
