@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2014, 2016-2017 ARM Limited. All rights reserved.
+ * Copyright (C) 2012-2014, 2017 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -18,8 +18,9 @@
 
 #undef  TRACE_SYSTEM
 #define TRACE_SYSTEM mali
+#ifndef TRACEPOINTS_ENABLED
 #define TRACE_SYSTEM_STRING __stringfy(TRACE_SYSTEM)
-
+#endif
 #define TRACE_INCLUDE_PATH .
 #define TRACE_INCLUDE_FILE mali_linux_trace
 

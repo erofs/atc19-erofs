@@ -1,14 +1,14 @@
 /*
- * This confidential and proprietary software may be used only as
- * authorised by a licensing agreement from ARM Limited
- * (C) COPYRIGHT 2012-2016 ARM Limited
- * ALL RIGHTS RESERVED
- * The entire notice above must be reproduced on all authorised
- * copies and copies may only be made to the extent permitted
- * by a licensing agreement from ARM Limited.
+ * Copyright (C) 2012-2017 ARM Limited. All rights reserved.
+ * 
+ * This program is free software and is provided to you under the terms of the GNU General Public License version 2
+ * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
+ * 
+ * A copy of the licence is included with the program, and can also be obtained from Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
- #include "mali_internal_sync.h"
+#include "mali_internal_sync.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 #include <linux/ioctl.h>
 #include <linux/export.h>
@@ -29,47 +29,17 @@
 #include "mali_timeline.h"
 #endif
 
-struct mali_internal_sync_merge_data {
-        s32   fd;
-        char    name[32];
-        s32   fence;
-};
-
-struct mali_internal_sync_pt_info {
-	u32	len;
-	char	obj_name[32];
-	char	driver_name[32];
-	int	status;
-	u64	timestamp_ns;
-	u8	driver_data[0];
-};
-
-struct mali_internal_sync_info_data {
-	u32 len;
-	char name[32];
-	int status;
-	u8 sync_pt_info[0];
-};
-
-/**
- * Define the ioctl constant for sync fence wait.
- */
-#define MALI_INTERNAL_SYNC_IOC_WAIT           _IOW('>', 0, s32)
-
-/**
- * Define the ioctl constant for sync fence merge.
- */
-#define MALI_INTERNAL_SYNC_IOC_MERGE          _IOWR('>', 1, struct mali_internal_sync_merge_data)
-
-/**
- * Define the ioctl constant for sync fence info.
- */
- #define MALI_INTERNAL_SYNC_IOC_FENCE_INFO          _IOWR('>', 2, struct mali_internal_sync_info_data)
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static const struct dma_fence_ops fence_ops;
-static const struct file_operations sync_fence_fops;
+#else
+static const struct fence_ops fence_ops;
+#endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static struct mali_internal_sync_point *mali_internal_fence_to_sync_pt(struct dma_fence *fence)
+#else
+static struct mali_internal_sync_point *mali_internal_fence_to_sync_pt(struct fence *fence)
+#endif
 {
 	MALI_DEBUG_ASSERT_POINTER(fence);
 	return container_of(fence, struct mali_internal_sync_point, base);
@@ -95,69 +65,64 @@ static void mali_internal_sync_timeline_free(struct kref *kref_count)
 	kfree(sync_timeline);
 }
 
-static struct mali_internal_sync_fence *mali_internal_sync_fence_alloc(int size)
-{
-	struct mali_internal_sync_fence *sync_fence = NULL;
-
-	sync_fence = kzalloc(size, GFP_KERNEL);
-	if (NULL == sync_fence) {
-		MALI_PRINT_ERROR(("Mali internal sync: Failed to allocate buffer  for the mali internal sync fence.\n"));
-		goto err;
-	}
-
-	sync_fence->file = anon_inode_getfile("mali_sync_fence", &sync_fence_fops, sync_fence, 0);
-	if (IS_ERR(sync_fence->file)) {
-		MALI_PRINT_ERROR(("Mali internal sync: Failed to get file  for the mali internal sync fence: err %d.\n", IS_ERR(sync_fence->file)));
-		goto err;
-	}
-
-	kref_init(&sync_fence->kref_count);
-	init_waitqueue_head(&sync_fence->wq);
-
-	return sync_fence;
-
-err:
-	if (NULL != sync_fence) {
-		kfree(sync_fence);
-	}
-	return NULL;
-}
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+static void mali_internal_fence_check_cb_func(struct fence *fence, struct fence_cb *cb)
+#else
 static void mali_internal_fence_check_cb_func(struct dma_fence *fence, struct dma_fence_cb *cb)
+#endif
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	struct mali_internal_sync_fence_cb *check;
+#else
+	struct mali_internal_sync_fence_waiter *waiter;
+#endif
 	struct mali_internal_sync_fence *sync_fence;
-
+	int ret;
 	MALI_DEBUG_ASSERT_POINTER(cb);
 	MALI_IGNORE(fence);
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	check = container_of(cb, struct mali_internal_sync_fence_cb, cb);
-	sync_fence = check->sync_fence;
-
-	if (atomic_dec_and_test(&sync_fence->status))
+	sync_fence = check->sync_file;
+#else
+	waiter = container_of(cb, struct mali_internal_sync_fence_waiter, cb);
+	sync_fence = (struct mali_internal_sync_fence *)waiter->work.private;
+#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+	ret = atomic_dec_and_test(&sync_fence->status);
+	if (ret)
 		wake_up_all(&sync_fence->wq);
+#else	
+	ret =sync_fence->fence->ops->signaled(sync_fence->fence);
+
+	if (0 > ret)
+		MALI_PRINT_ERROR(("Mali internal sync:Failed to wait fence  0x%x for sync_fence 0x%x.\n", fence, sync_fence));
+	if (1 == ret)
+		wake_up_all(&sync_fence->wq);
+#endif	
 }
 
-static void mali_internal_sync_fence_add_fence(struct mali_internal_sync_fence *sync_fence, struct dma_fence *sync_pt)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
+static void mali_internal_sync_fence_add_fence(struct mali_internal_sync_fence *sync_fence, struct fence *sync_pt)
 {
 	int fence_num = 0;
 	MALI_DEBUG_ASSERT_POINTER(sync_fence);
 	MALI_DEBUG_ASSERT_POINTER(sync_pt);
 
-	fence_num = atomic_read(&sync_fence->num_fences);
+	fence_num = sync_fence->num_fences;
 
-	sync_fence->cbs[fence_num].base = sync_pt;
-	sync_fence->cbs[fence_num].sync_fence = sync_fence;
+	sync_fence->cbs[fence_num].fence = sync_pt;
+	sync_fence->cbs[fence_num].sync_file = sync_fence;
 
-	if (!dma_fence_add_callback(sync_pt, &sync_fence->cbs[fence_num].cb, mali_internal_fence_check_cb_func)) {
-		dma_fence_get(sync_pt);
-		atomic_inc(&sync_fence->num_fences);
+	if (!fence_add_callback(sync_pt, &sync_fence->cbs[fence_num].cb, mali_internal_fence_check_cb_func)) {
+		fence_get(sync_pt);
+		sync_fence->num_fences++;
 		atomic_inc(&sync_fence->status);
 	}
 }
+#endif
 
 static int mali_internal_sync_fence_wake_up_wq(wait_queue_entry_t *curr, unsigned mode,
-				 int wake_flags, void *key)
+		int wake_flags, void *key)
 {
 	struct mali_internal_sync_fence_waiter *wait;
 	MALI_IGNORE(mode);
@@ -172,7 +137,7 @@ static int mali_internal_sync_fence_wake_up_wq(wait_queue_entry_t *curr, unsigne
 }
 
 struct mali_internal_sync_timeline *mali_internal_sync_timeline_create(const struct mali_internal_sync_timeline_ops *ops,
-					   int size, const char *name)
+		int size, const char *name)
 {
 	struct mali_internal_sync_timeline *sync_timeline = NULL;
 
@@ -190,7 +155,11 @@ struct mali_internal_sync_timeline *mali_internal_sync_timeline_create(const str
 	}
 	kref_init(&sync_timeline->kref_count);
 	sync_timeline->ops = ops;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 	sync_timeline->fence_context = dma_fence_context_alloc(1);
+#else
+	sync_timeline->fence_context = fence_context_alloc(1);
+#endif
 	strlcpy(sync_timeline->name, name, sizeof(sync_timeline->name));
 
 	INIT_LIST_HEAD(&sync_timeline->sync_pt_list_head);
@@ -227,7 +196,11 @@ void mali_internal_sync_timeline_signal(struct mali_internal_sync_timeline *sync
 
 	list_for_each_entry_safe(sync_pt, next, &sync_timeline->sync_pt_list_head,
 				 sync_pt_list) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 		if (dma_fence_is_signaled_locked(&sync_pt->base))
+#else
+		if (fence_is_signaled_locked(&sync_pt->base))
+#endif
 			list_del_init(&sync_pt->sync_pt_list);
 	}
 
@@ -253,8 +226,13 @@ struct mali_internal_sync_point *mali_internal_sync_point_create(struct mali_int
 	}
 	spin_lock_irqsave(&sync_timeline->sync_pt_list_lock, flags);
 	kref_get(&sync_timeline->kref_count);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 	dma_fence_init(&sync_pt->base, &fence_ops, &sync_timeline->sync_pt_list_lock,
+		       sync_timeline->fence_context, ++sync_timeline->value);
+#else
+	fence_init(&sync_pt->base, &fence_ops, &sync_timeline->sync_pt_list_lock,
 		   sync_timeline->fence_context, ++sync_timeline->value);
+#endif
 	INIT_LIST_HEAD(&sync_pt->sync_pt_list);
 	spin_unlock_irqrestore(&sync_timeline->sync_pt_list_lock, flags);
 
@@ -264,30 +242,6 @@ err:
 		kfree(sync_pt);
 	}
 	return NULL;
-}
-
-struct mali_internal_sync_fence *mali_internal_sync_fence_create(struct mali_internal_sync_point *sync_pt)
-{
-	struct mali_internal_sync_fence *sync_fence = NULL;
-
-	MALI_DEBUG_ASSERT_POINTER(sync_pt);
-
-	sync_fence = mali_internal_sync_fence_alloc(offsetof(struct mali_internal_sync_fence, cbs[1]));
-	if (NULL == sync_fence) {
-		MALI_PRINT_ERROR(("Mali internal sync:Failed to  create the mali internal sync fence.\n"));
-		return NULL;
-	}
-
-	atomic_set(&sync_fence->num_fences, 1);
-	atomic_set(&sync_fence->status, 1);
-
-	sync_fence->cbs[0].base = &sync_pt->base;
-	sync_fence->cbs[0].sync_fence = sync_fence;
-	if (dma_fence_add_callback(&sync_pt->base, &sync_fence->cbs[0].cb,
-			       mali_internal_fence_check_cb_func))
-		atomic_dec(&sync_fence->status);
-
-	return sync_fence;
 }
 
 struct mali_internal_sync_fence *mali_internal_sync_fence_fdget(int fd)
@@ -301,29 +255,47 @@ struct mali_internal_sync_fence *mali_internal_sync_fence_fdget(int fd)
 	return file->private_data;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 struct mali_internal_sync_fence *mali_internal_sync_fence_merge(
-				    struct mali_internal_sync_fence *sync_fence1, struct mali_internal_sync_fence *sync_fence2)
+	struct mali_internal_sync_fence *sync_fence1, struct mali_internal_sync_fence *sync_fence2)
 {
 	struct mali_internal_sync_fence *new_sync_fence;
 	int i, j, num_fence1, num_fence2, total_fences;
+	struct fence *fence0 = NULL;
 
 	MALI_DEBUG_ASSERT_POINTER(sync_fence1);
 	MALI_DEBUG_ASSERT_POINTER(sync_fence2);
 
-	num_fence1 = atomic_read(&sync_fence1->num_fences);
-	num_fence2= atomic_read(&sync_fence2->num_fences);
+	num_fence1 = sync_fence1->num_fences;
+	num_fence2 = sync_fence2->num_fences;
 
 	total_fences = num_fence1 + num_fence2;
 
-	new_sync_fence = mali_internal_sync_fence_alloc(offsetof(struct mali_internal_sync_fence, cbs[total_fences]));
+	i =0;
+	j = 0;
+	
+	if (num_fence1 > 0) {
+		fence0 = sync_fence1->cbs[i].fence;
+		i = 1;
+	}
+	else if(num_fence2 > 0) {
+		fence0 = sync_fence2->cbs[i].fence;
+		j =1;
+	}
+		
+	new_sync_fence = (struct mali_internal_sync_fence *)sync_file_create(fence0);
 	if (NULL == new_sync_fence) {
 		MALI_PRINT_ERROR(("Mali internal sync:Failed to  create the mali internal sync fence when merging sync fence.\n"));
 		return NULL;
 	}
 
-	for (i = j = 0; i < num_fence1 && j < num_fence2; ) {
-		struct dma_fence *fence1 = sync_fence1->cbs[i].base;
-		struct dma_fence *fence2 = sync_fence2->cbs[j].base;
+	fence_remove_callback(new_sync_fence->cb[0].fence, &new_sync_fence->cb[0].cb);
+	new_sync_fence->num_fences = 0;
+	atomic_dec(&new_sync_fence->status);
+
+	for (; i < num_fence1 && j < num_fence2;) {
+		struct fence *fence1 = sync_fence1->cbs[i].fence;
+		struct fence *fence2 = sync_fence2->cbs[j].fence;
 
 		if (fence1->context < fence2->context) {
 			mali_internal_sync_fence_add_fence(new_sync_fence, fence1);
@@ -344,16 +316,194 @@ struct mali_internal_sync_fence *mali_internal_sync_fence_merge(
 	}
 
 	for (; i < num_fence1; i++)
-		mali_internal_sync_fence_add_fence(new_sync_fence, sync_fence1->cbs[i].base);
+		mali_internal_sync_fence_add_fence(new_sync_fence, sync_fence1->cbs[i].fence);
 
 	for (; j < num_fence2; j++)
-		mali_internal_sync_fence_add_fence(new_sync_fence, sync_fence2->cbs[j].base);
+		mali_internal_sync_fence_add_fence(new_sync_fence, sync_fence2->cbs[j].fence);
 
 	return new_sync_fence;
 }
+#else
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+static struct fence **mali_internal_get_fences(struct mali_internal_sync_fence *sync_fence, int *num_fences)
+#else
+static struct dma_fence **mali_internal_get_fences(struct mali_internal_sync_fence *sync_fence, int *num_fences)
+#endif
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+	if (sync_fence->fence->ops == &fence_array_ops) {
+		struct fence_array *fence_array = container_of(sync_fence->fence, struct fence_array, base);
+		*num_fences = fence_array->num_fences;
+		return fence_array->fences;
+	}
+#else
+	if (sync_fence->fence->ops == &dma_fence_array_ops) {
+		struct dma_fence_array *fence_array = container_of(sync_fence->fence, struct dma_fence_array, base);
+		*num_fences = fence_array->num_fences;
+		return fence_array->fences;
+	}
+#endif
+	*num_fences = 1;
+	return &sync_fence->fence;
+}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+static void mali_internal_add_fence_array(struct fence **fences, int *num_fences, struct fence *fence)
+#else
+static void mali_internal_add_fence_array(struct dma_fence **fences, int *num_fences, struct dma_fence *fence)
+#endif
+{
+	fences[*num_fences] = fence;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+	if (!fence_is_signaled(fence)) {
+		fence_get(fence);
+		(*num_fences)++;
+	}
+#else
+	if (!dma_fence_is_signaled(fence)) {
+		dma_fence_get(fence);
+		(*num_fences)++;
+	}
+#endif
+}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+static int mali_internal_sync_fence_set_fence_array(struct mali_internal_sync_fence *sync_fence,
+			       struct fence **fences, int num_fences)
+#else
+static int mali_internal_sync_fence_set_fence_array(struct mali_internal_sync_fence *sync_fence,
+			       struct dma_fence **fences, int num_fences)
+#endif
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+	struct fence_array *array;
+#else
+	struct dma_fence_array *array;
+#endif
+	MALI_DEBUG_ASSERT(1 != num_fences);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+	array = fence_array_create(num_fences, fences,
+					   fence_context_alloc(1), 1, false);
+#else
+	array = dma_fence_array_create(num_fences, fences,
+					   dma_fence_context_alloc(1), 1, false);
+#endif
+	if (!array)
+		return -ENOMEM;
+
+	sync_fence->fence = &array->base;
+
+	return 0;
+}
+
+struct mali_internal_sync_fence *mali_internal_sync_fence_merge(
+	struct mali_internal_sync_fence *sync_fence1, struct mali_internal_sync_fence *sync_fence2)
+{
+		struct mali_internal_sync_fence *sync_fence;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+		struct fence **fences, **nfences, **fences1, **fences2;
+#else
+		struct dma_fence **fences, **nfences, **fences1, **fences2;
+#endif
+		int real_num_fences, i, j, num_fences, num_fences1, num_fences2;
+
+		fences1 = mali_internal_get_fences(sync_fence1, &num_fences1);
+		fences2 = mali_internal_get_fences(sync_fence2, &num_fences2);
+		
+		num_fences = num_fences1 + num_fences2;
+	
+		fences = kcalloc(num_fences, sizeof(*fences), GFP_KERNEL);
+		if (!fences) {
+			MALI_PRINT_ERROR(("Mali internal sync:Failed to  alloc buffer for fences.\n"));
+			goto fences_alloc_failed;
+		}
+
+		for (real_num_fences = i = j = 0; i < num_fences1 && j < num_fences2; ) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+			struct fence *fence1 = fences1[i];
+			struct fence *fence2 = fences2[j];
+#else
+			struct dma_fence *fence1 = fences1[i];
+			struct dma_fence *fence2 = fences2[j];
+#endif
+			if (fence1->context < fence2->context) {
+				mali_internal_add_fence_array(fences, &real_num_fences, fence1);
+	
+				i++;
+			} else if (fence1->context > fence2->context) {
+				mali_internal_add_fence_array(fences, &real_num_fences, fence2);
+	
+				j++;
+			} else {
+				if (fence1->seqno - fence2->seqno <= INT_MAX)
+					mali_internal_add_fence_array(fences, &real_num_fences, fence1);
+				else
+					mali_internal_add_fence_array(fences, &real_num_fences, fence2);
+	
+				i++;
+				j++;
+			}
+		}
+	
+		for (; i < num_fences1; i++)
+			mali_internal_add_fence_array(fences, &real_num_fences, fences1[i]);
+	
+		for (; j < num_fences2; j++)
+			mali_internal_add_fence_array(fences, &real_num_fences, fences2[j]);
+
+		if (0 == real_num_fences)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+			fences[real_num_fences++] = fence_get(fences1[0]);
+#else
+			fences[real_num_fences++] = dma_fence_get(fences1[0]);
+#endif
+	
+		if (num_fences > real_num_fences) {
+			nfences = krealloc(fences, real_num_fences * sizeof(*fences),
+					  GFP_KERNEL);
+			if (!nfences)
+				goto nfences_alloc_failed;
+	
+			fences = nfences;
+		}
+
+		sync_fence = (struct mali_internal_sync_fence *)sync_file_create(fences[0]);
+		if (NULL == sync_fence) {
+			MALI_PRINT_ERROR(("Mali internal sync:Failed to  create the mali internal sync fence when merging sync fence.\n"));
+			goto sync_fence_alloc_failed;
+		}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+		fence_put(fences[0]);
+#else
+		dma_fence_put(fences[0]);
+#endif
+
+		if (mali_internal_sync_fence_set_fence_array(sync_fence, fences, real_num_fences) < 0) {
+			MALI_PRINT_ERROR(("Mali internal sync:Failed to  set fence for sync fence.\n"));
+			goto sync_fence_set_failed;
+		}
+	
+		return sync_fence;
+
+sync_fence_set_failed:
+	fput(sync_fence->file);
+sync_fence_alloc_failed:
+	for (i = 0; i < real_num_fences; i++)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+		fence_put(fences[i]);
+#else
+		dma_fence_put(fences[i]);
+#endif
+nfences_alloc_failed:
+	kfree(fences);
+fences_alloc_failed:
+	return NULL;
+}
+#endif
 
 void mali_internal_sync_fence_waiter_init(struct mali_internal_sync_fence_waiter *waiter,
-                                          mali_internal_sync_callback_t callback)
+		mali_internal_sync_callback_t callback)
 {
 	MALI_DEBUG_ASSERT_POINTER(waiter);
 	MALI_DEBUG_ASSERT_POINTER(callback);
@@ -363,14 +513,14 @@ void mali_internal_sync_fence_waiter_init(struct mali_internal_sync_fence_waiter
 }
 
 int mali_internal_sync_fence_wait_async(struct mali_internal_sync_fence *sync_fence,
-			  struct mali_internal_sync_fence_waiter *waiter)
+					struct mali_internal_sync_fence_waiter *waiter)
 {
 	int err;
 	unsigned long flags;
 
 	MALI_DEBUG_ASSERT_POINTER(sync_fence);
 	MALI_DEBUG_ASSERT_POINTER(waiter);
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0)
 	err = atomic_read(&sync_fence->status);
 
 	if (0 > err)
@@ -384,6 +534,7 @@ int mali_internal_sync_fence_wait_async(struct mali_internal_sync_fence *sync_fe
 
 	spin_lock_irqsave(&sync_fence->wq.lock, flags);
 	err = atomic_read(&sync_fence->status);
+
 	if (0 < err)
 		__add_wait_queue_entry_tail(&sync_fence->wq, &waiter->work);
 	spin_unlock_irqrestore(&sync_fence->wq.lock, flags);
@@ -392,10 +543,43 @@ int mali_internal_sync_fence_wait_async(struct mali_internal_sync_fence *sync_fe
 		return err;
 
 	return !err;
+#else
+	if ((sync_fence->fence) && (sync_fence->fence->ops) && (sync_fence->fence->ops->signaled))
+		err = sync_fence->fence->ops->signaled(sync_fence->fence);
+	else
+		err = -1;
+
+	if (0 > err)
+		return err;
+
+	if (1 == err)
+		return err;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
+	err = dma_fence_add_callback(sync_fence->fence, &waiter->cb, mali_internal_fence_check_cb_func);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+	err = fence_add_callback(sync_fence->fence, &waiter->cb, mali_internal_fence_check_cb_func);
+#endif
+
+	if (0 != err)
+		return err;
+
+	init_waitqueue_func_entry(&waiter->work, mali_internal_sync_fence_wake_up_wq);
+	waiter->work.private = sync_fence;
+
+	spin_lock_irqsave(&sync_fence->wq.lock, flags);
+	err =  sync_fence->fence->ops->signaled(sync_fence->fence);
+
+	if (0 == err)
+		__add_wait_queue_entry_tail(&sync_fence->wq, &waiter->work);
+	spin_unlock_irqrestore(&sync_fence->wq.lock, flags);
+
+	return err;
+#endif
 }
 
 int mali_internal_sync_fence_cancel_async(struct mali_internal_sync_fence *sync_fence,
-			     struct mali_internal_sync_fence_waiter *waiter)
+		struct mali_internal_sync_fence_waiter *waiter)
 {
 	unsigned long flags;
 	int ret = 0;
@@ -410,73 +594,23 @@ int mali_internal_sync_fence_cancel_async(struct mali_internal_sync_fence *sync_
 		ret = -ENOENT;
 	spin_unlock_irqrestore(&sync_fence->wq.lock, flags);
 
+	if (0 == ret) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
+        	dma_fence_remove_callback(sync_fence->fence, &waiter->cb);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+        	fence_remove_callback(sync_fence->fence, &waiter->cb);
+#endif
+
+	}
+
 	return ret;
 }
 
-#if defined(DEBUG)
-static void mali_internal_sync_timeline_show(void)
-{
-	struct mali_session_data *session, *tmp;
-	u32 session_seq = 1;
-	MALI_DEBUG_PRINT(2, ("timeline system info: \n=================\n\n"));
-
-	mali_session_lock();
-	MALI_SESSION_FOREACH(session, tmp, link) {
-		MALI_DEBUG_PRINT(2, ("session %d <%p> start:\n", session_seq, session));
-		mali_timeline_debug_print_system(session->timeline_system, NULL);
-		MALI_DEBUG_PRINT(2, ("session %d end\n\n\n", session_seq++));
-	}
-	mali_session_unlock();
-}
-#endif
-static int mali_internal_sync_fence_wait(struct mali_internal_sync_fence *sync_fence, long timeout)
-{
-	long ret;
-	MALI_DEBUG_ASSERT_POINTER(sync_fence);
-
-	if (0 > timeout)
-		timeout = MAX_SCHEDULE_TIMEOUT;
-	else
-		timeout = msecs_to_jiffies(timeout);
-
-	ret = wait_event_interruptible_timeout(sync_fence->wq,
-		atomic_read(&sync_fence->status) <= 0, timeout);
-
-	if (0  > ret) {
-		return ret;
-	} else if (ret == 0) {
-		if (timeout) {
-			int i;
-			MALI_DEBUG_PRINT(2, ("Mali internal sync:fence timeout on [%p] after %dms\n",
-				sync_fence, jiffies_to_msecs(timeout)));
-
-			for (i = 0; i < atomic_read(&sync_fence->num_fences); ++i) {
-				sync_fence->cbs[i].base->ops->fence_value_str(sync_fence->cbs[i].base, NULL, 0);
-			}
-
-#if defined(DEBUG)
-			mali_internal_sync_timeline_show();
-#endif
-
-		}
-		return -ETIME;
-	}
-
-	ret = atomic_read(&sync_fence->status);
-	if (ret) {
-		int i;
-		MALI_DEBUG_PRINT(2, ("fence error %ld on [%p]\n", ret, sync_fence));
-		for (i = 0; i < atomic_read(&sync_fence->num_fences); ++i) {
-				sync_fence->cbs[i].base->ops->fence_value_str(sync_fence->cbs[i].base, NULL, 0);
-			}
-#if defined(DEBUG)
-		mali_internal_sync_timeline_show();
-#endif
-	}
-	return ret;
-}
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static const char *mali_internal_fence_get_driver_name(struct dma_fence *fence)
+#else
+static const char *mali_internal_fence_get_driver_name(struct fence *fence)
+#endif
 {
 	struct mali_internal_sync_point *sync_pt;
 	struct mali_internal_sync_timeline *parent;
@@ -489,7 +623,11 @@ static const char *mali_internal_fence_get_driver_name(struct dma_fence *fence)
 	return parent->ops->driver_name;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static const char *mali_internal_fence_get_timeline_name(struct dma_fence *fence)
+#else
+static const char *mali_internal_fence_get_timeline_name(struct fence *fence)
+#endif
 {
 	struct mali_internal_sync_point *sync_pt;
 	struct mali_internal_sync_timeline *parent;
@@ -502,7 +640,11 @@ static const char *mali_internal_fence_get_timeline_name(struct dma_fence *fence
 	return parent->name;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static void mali_internal_fence_release(struct dma_fence *fence)
+#else
+static void mali_internal_fence_release(struct fence *fence)
+#endif
 {
 	unsigned long flags;
 	struct mali_internal_sync_point *sync_pt;
@@ -523,10 +665,18 @@ static void mali_internal_fence_release(struct dma_fence *fence)
 		parent->ops->free_pt(sync_pt);
 
 	kref_put(&parent->kref_count, mali_internal_sync_timeline_free);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 	dma_fence_free(&sync_pt->base);
+#else
+	fence_free(&sync_pt->base);
+#endif
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static bool mali_internal_fence_signaled(struct dma_fence *fence)
+#else
+static bool mali_internal_fence_signaled(struct fence *fence)
+#endif
 {
 	int ret;
 	struct mali_internal_sync_point *sync_pt;
@@ -539,11 +689,19 @@ static bool mali_internal_fence_signaled(struct dma_fence *fence)
 
 	ret = parent->ops->has_signaled(sync_pt);
 	if (0 > ret)
-		dma_fence_set_error(fence, ret);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
+		fence->error = ret;
+#else
+		fence->error= ret;
+#endif
 	return ret;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static bool mali_internal_fence_enable_signaling(struct dma_fence *fence)
+#else
+static bool mali_internal_fence_enable_signaling(struct fence *fence)
+#endif
 {
 	struct mali_internal_sync_point *sync_pt;
 	struct mali_internal_sync_timeline *parent;
@@ -560,8 +718,11 @@ static bool mali_internal_fence_enable_signaling(struct dma_fence *fence)
 	return true;
 }
 
-static void mali_internal_fence_value_str(struct dma_fence *fence,
-				    char *str, int size)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
+static void mali_internal_fence_value_str(struct dma_fence *fence, char *str, int size)
+#else
+static void mali_internal_fence_value_str(struct fence *fence, char *str, int size)
+#endif
 {
 	struct mali_internal_sync_point *sync_pt;
 	struct mali_internal_sync_timeline *parent;
@@ -576,238 +737,21 @@ static void mali_internal_fence_value_str(struct dma_fence *fence,
 	parent->ops->print_sync_pt(sync_pt);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static const struct dma_fence_ops fence_ops = {
+#else
+static const struct fence_ops fence_ops = {
+#endif
 	.get_driver_name = mali_internal_fence_get_driver_name,
 	.get_timeline_name = mali_internal_fence_get_timeline_name,
 	.enable_signaling = mali_internal_fence_enable_signaling,
 	.signaled = mali_internal_fence_signaled,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 	.wait = dma_fence_default_wait,
+#else
+	.wait = fence_default_wait,
+#endif
 	.release = mali_internal_fence_release,
 	.fence_value_str = mali_internal_fence_value_str,
-};
-
-static void mali_internal_sync_fence_free(struct kref *kref_count)
-{
-	struct mali_internal_sync_fence *sync_fence;
-	int i, num_fences;
-
-	MALI_DEBUG_ASSERT_POINTER(kref_count);
-
-	sync_fence = container_of(kref_count, struct mali_internal_sync_fence, kref_count);
-	num_fences = atomic_read(&sync_fence->num_fences);
-
-	for (i = 0; i <num_fences; ++i) {
-		dma_fence_remove_callback(sync_fence->cbs[i].base, &sync_fence->cbs[i].cb);
-		dma_fence_put(sync_fence->cbs[i].base);
-	}
-
-	kfree(sync_fence);
-}
-
-static int mali_internal_sync_fence_release(struct inode *inode, struct file *file)
-{
-	struct mali_internal_sync_fence *sync_fence;
-	MALI_IGNORE(inode);
-	MALI_DEBUG_ASSERT_POINTER(file);
-	sync_fence = file->private_data;
-	kref_put(&sync_fence->kref_count, mali_internal_sync_fence_free);
-	return 0;
-}
-
-static unsigned int mali_internal_sync_fence_poll(struct file *file, poll_table *wait)
-{
-	int status;
-	struct mali_internal_sync_fence *sync_fence;
-
-	MALI_DEBUG_ASSERT_POINTER(file);
-	MALI_DEBUG_ASSERT_POINTER(wait);
-
-	sync_fence = file->private_data;
-	poll_wait(file, &sync_fence->wq, wait);
-	status = atomic_read(&sync_fence->status);
-
-	if (!status)
-		return POLLIN;
-	else if (status < 0)
-		return POLLERR;
-	return 0;
-}
-
-static long mali_internal_sync_fence_ioctl_wait(struct mali_internal_sync_fence *sync_fence, unsigned long arg)
-{
-	s32 value;
-	MALI_DEBUG_ASSERT_POINTER(sync_fence);
-
-	if (copy_from_user(&value, (void __user *)arg, sizeof(value))) {
-		MALI_PRINT_ERROR(("Mali internal sync:Failed to copy from user when sync fence ioctl wait.\n"));
-		return -EFAULT;
-	}
-	return mali_internal_sync_fence_wait(sync_fence, value);
-}
-
-static long mali_internal_sync_fence_ioctl_merge(struct mali_internal_sync_fence *old_sync_fence1, unsigned long arg)
-{
-	int err;
-	struct mali_internal_sync_fence *old_sync_fence2, *new_sync_fence;
-	struct mali_internal_sync_merge_data data;
-	int fd;
-
-	MALI_DEBUG_ASSERT_POINTER(old_sync_fence1);
-
-	fd = get_unused_fd_flags(O_CLOEXEC);
-
-	if (0 > fd) {
-		MALI_PRINT_ERROR(("Mali internal sync:Invaid fd when sync fence ioctl merge.\n"));
-		return fd;
-	}
-	if (copy_from_user(&data, (void __user *)arg, sizeof(data))) {
-		MALI_PRINT_ERROR(("Mali internal sync:Failed to copy from user when sync fence ioctl merge.\n"));
-		err = -EFAULT;
-		goto copy_from_user_failed;
-	}
-
-	old_sync_fence2 = mali_internal_sync_fence_fdget(data.fd);
-	if (NULL == old_sync_fence2) {
-		MALI_PRINT_ERROR(("Mali internal sync:Failed to sync fence fdget when sync fence ioctl merge.\n"));
-		err = -ENOENT;
-		goto sync_fence_fdget_failed;
-	}
-
-	new_sync_fence = mali_internal_sync_fence_merge(old_sync_fence1, old_sync_fence2);
-	if (NULL == new_sync_fence) {
-		MALI_PRINT_ERROR(("Mali internal sync:Failed to sync fence merge when sync fence ioctl merge.\n"));
-		err = -ENOMEM;
-		goto sync_fence_merge_failed;
-	}
-
-	data.fence = fd;
-	if (copy_to_user((void __user *)arg, &data, sizeof(data))) {
-		MALI_PRINT_ERROR(("Mali internal sync:Failed to copy to user when sync fence ioctl merge.\n"));
-		err = -EFAULT;
-		goto copy_to_user_failed;
-	}
-
-	fd_install(fd, new_sync_fence->file);
-	fput(old_sync_fence2->file);
-	return 0;
-
-copy_to_user_failed:
-	fput(new_sync_fence->file);
-sync_fence_merge_failed:
-	fput(old_sync_fence2->file);
-sync_fence_fdget_failed:
-copy_from_user_failed:
-	put_unused_fd(fd);
-	return err;
-}
-
-static long mali_internal_sync_fence_ioctl_fence_info(struct mali_internal_sync_fence *sync_fence, unsigned long arg)
-{
-	struct mali_internal_sync_info_data *sync_info_data;
-	u32 size;
-	char name[32]  = "mali_internal_fence";
-	u32 len = sizeof(struct mali_internal_sync_info_data);
-	int num_fences, err, i;
-
-	if (copy_from_user(&size, (void __user *)arg, sizeof(size))) {
-		MALI_PRINT_ERROR(("Mali internal sync:Failed to copy from user when sync fence ioctl fence data info.\n"));
-		err = -EFAULT;
-		goto copy_from_user_failed;
-	}
-
-	if (size < sizeof(struct mali_internal_sync_info_data)) {
-		MALI_PRINT_ERROR(("Mali internal sync:Failed to data size check when sync fence ioctl fence data info.\n"));
-		err=  -EINVAL;
-		goto data_size_check_failed;
-	}
-
-	if (size > 4096)
-		size = 4096;
-
-	sync_info_data = kzalloc(size, GFP_KERNEL);
-	if (sync_info_data  == NULL) {
-		MALI_PRINT_ERROR(("Mali internal sync:Failed to allocate buffer  when sync fence ioctl fence data info.\n"));
-		err = -ENOMEM;
-		goto allocate_buffer_failed;
-	}
-
-	strlcpy(sync_info_data->name, name, sizeof(sync_info_data->name));
-
-	sync_info_data->status = atomic_read(&sync_fence->status);
-	if (sync_info_data->status >= 0)
-		sync_info_data->status = !sync_info_data->status;
-
-	num_fences = atomic_read(&sync_fence->num_fences);
-
-	for (i = 0; i < num_fences; ++i) {
-		struct mali_internal_sync_pt_info *sync_pt_info = NULL;
-		struct dma_fence *base = sync_fence->cbs[i].base;
-
-		if ((size - len) < sizeof(struct mali_internal_sync_pt_info)) {
-			MALI_PRINT_ERROR(("Mali internal sync:Failed to fence size check  when sync fence ioctl fence data info.\n"));
-			err = -ENOMEM;
-			goto fence_size_check_failed;
-
-		}
-
-		sync_pt_info = (struct mali_internal_sync_pt_info *)((u8 *)sync_info_data + len);
-		sync_pt_info->len = sizeof(struct mali_internal_sync_pt_info);
-
-		strlcpy(sync_pt_info->obj_name, base->ops->get_timeline_name(base), sizeof(sync_pt_info->obj_name));
-		strlcpy(sync_pt_info->driver_name, base->ops->get_driver_name(base), sizeof(sync_pt_info->driver_name));
-
-		if (dma_fence_is_signaled(base))
-			sync_pt_info->status = dma_fence_get_status(base) >= 0 ? 1 : dma_fence_get_status(base);
-		else
-			sync_pt_info->status = 0;
-
-		sync_pt_info->timestamp_ns = ktime_to_ns(base->timestamp);
-
-		len += sync_pt_info->len;
-	}
-
-	sync_info_data->len = len;
-
-	if (copy_to_user((void __user *)arg, sync_info_data, len)) {
-		MALI_PRINT_ERROR(("Mali internal sync:Failed to copy to user when sync fence ioctl fence data info.\n"));
-		err = -EFAULT;
-		goto copy_to_user_failed;
-	}
-
-	err = 0;
-
-copy_to_user_failed:
-fence_size_check_failed:
-	kfree(sync_info_data);
-allocate_buffer_failed:
-data_size_check_failed:
-copy_from_user_failed:
-	return err;
-}
-
-static long mali_internal_sync_fence_ioctl(struct file *file, unsigned int cmd,
-			     unsigned long arg)
-{
-	struct mali_internal_sync_fence *sync_fence = file->private_data;
-
-	switch (cmd) {
-	case MALI_INTERNAL_SYNC_IOC_WAIT:
-		return mali_internal_sync_fence_ioctl_wait(sync_fence, arg);
-
-	case MALI_INTERNAL_SYNC_IOC_MERGE:
-		return mali_internal_sync_fence_ioctl_merge(sync_fence, arg);
-
-	case MALI_INTERNAL_SYNC_IOC_FENCE_INFO:
-		return mali_internal_sync_fence_ioctl_fence_info(sync_fence, arg);
-	default:
-		return -ENOTTY;
-	}
-}
-
-static const struct file_operations sync_fence_fops = {
-	.release = mali_internal_sync_fence_release,
-	.poll = mali_internal_sync_fence_poll,
-	.unlocked_ioctl = mali_internal_sync_fence_ioctl,
-	.compat_ioctl = mali_internal_sync_fence_ioctl,
 };
 #endif

@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2011-2017 ARM Limited. All rights reserved.
+ * Copyright (C) 2011-2015, 2017 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -26,7 +26,12 @@
 
 #include <linux/seq_file.h>
 #include <linux/debugfs.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+#include <linux/uaccess.h>
+#else
 #include <asm/uaccess.h>
+#endif
 #include <linux/module.h>
 #include <linux/mali/mali_utgard.h>
 #include "mali_kernel_sysfs.h"

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2014, 2016-2017 ARM Limited. All rights reserved.
+ * Copyright (C) 2013-2014, 2017 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -435,4 +435,6 @@ void mali_soft_job_system_abort(struct mali_soft_job_system *system)
 
 		mali_soft_job_destroy(job);
 	}
+
+	mali_executor_schedule_from_mask(MALI_SCHEDULER_MASK_ALL, MALI_FALSE);
 }

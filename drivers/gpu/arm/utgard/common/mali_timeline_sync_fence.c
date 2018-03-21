@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013, 2016-2017 ARM Limited. All rights reserved.
+ * Copyright (C) 2013, 2017 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -23,7 +23,7 @@
  * @param point Point on timeline.
  * @return Sync fence that will be signaled when tracker is activated.
  */
- #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
 static struct sync_fence *mali_timeline_sync_fence_create_and_add_tracker(struct mali_timeline *timeline, mali_timeline_point point)
 #else
 static struct mali_internal_sync_fence *mali_timeline_sync_fence_create_and_add_tracker(struct mali_timeline *timeline, mali_timeline_point point)

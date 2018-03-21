@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2017 ARM Limited. All rights reserved.
+ * Copyright (C) 2013-2015, 2017 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -114,6 +114,9 @@ static u32 _mali_free_allocation_mem(mali_mem_allocation *mali_alloc)
 		MALI_DEBUG_PRINT(1, ("mem type %d is not in the mali_mem_type enum.\n", mem_bkend->type));
 		break;
 	}
+
+	if ((NULL != mali_alloc->cpu_mapping.vma) && (mali_alloc == (mali_alloc->cpu_mapping.vma)->vm_private_data))
+		(mali_alloc->cpu_mapping.vma)->vm_private_data = NULL;
 
 	/*Remove backend memory idex */
 	mutex_lock(&mali_idr_mutex);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2017 ARM Limited. All rights reserved.
+ * Copyright (C) 2010-2015, 2017 ARM Limited. All rights reserved.
  * 
  * This program is free software and is provided to you under the terms of the GNU General Public License version 2
  * as published by the Free Software Foundation, and any use by you of this program is subject to the terms of such GNU licence.
@@ -9,7 +9,12 @@
  */
 #include <linux/fs.h>       /* file system operations */
 #include <linux/slab.h>     /* memort allocation functions */
-#include <asm/uaccess.h>    /* user space access */
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,12,0)
+#include <linux/uaccess.h>
+#else
+#include <asm/uaccess.h>
+#endif
 
 #include "mali_ukk.h"
 #include "mali_osk.h"
@@ -62,9 +67,6 @@ int wait_for_notification_wrapper(struct mali_session_data *session_data, _mali_
 
 	MALI_CHECK_NON_NULL(uargs, -EINVAL);
 
-	/* zero kargs to make sure we don't leak stack info to userspace */
-	memset(&kargs, 0, sizeof(_mali_uk_wait_for_notification_s));
-
 	kargs.ctx = (uintptr_t)session_data;
 	err = _mali_ukk_wait_for_notification(&kargs);
 	if (_MALI_OSK_ERR_OK != err) return map_errcode(err);
@@ -106,9 +108,6 @@ int get_user_settings_wrapper(struct mali_session_data *session_data, _mali_uk_g
 	_mali_osk_errcode_t err;
 
 	MALI_CHECK_NON_NULL(uargs, -EINVAL);
-
-	/* zero kargs to make sure we don't leak stack info to userspace */
-        memset(&kargs, 0, sizeof(_mali_uk_get_user_settings_s));
 
 	kargs.ctx = (uintptr_t)session_data;
 	err = _mali_ukk_get_user_settings(&kargs);
