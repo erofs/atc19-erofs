@@ -382,11 +382,13 @@ static void tmc_update_etr_buffer(struct coresight_device *csdev,
 				  struct perf_output_handle *handle,
 				  void *sink_config)
 {
-	int i, cur;
+	bool lost = false;
+	int cur;
+	const u32 *barrier;
 	u32 *buf_ptr;
-	u32 read_ptr, write_ptr;
-	u32 status, to_read;
-	unsigned long offset;
+	u64 read_ptr, write_ptr;
+	u32 status, to_read, to_copy;
+	unsigned long offset, r_offset;
 	struct cs_buffers *buf = sink_config;
 	struct tmc_drvdata *drvdata = dev_get_drvdata(csdev->dev.parent);
 
@@ -401,8 +403,8 @@ static void tmc_update_etr_buffer(struct coresight_device *csdev,
 
 	tmc_flush_and_stop(drvdata);
 
-	read_ptr = readl_relaxed(drvdata->base + TMC_RRP);
-	write_ptr = readl_relaxed(drvdata->base + TMC_RWP);
+	read_ptr = tmc_read_rrp(drvdata);
+	write_ptr = tmc_read_rwp(drvdata);
 
 	/*
 	 * Get a hold of the status register and see if a wrap around
@@ -410,7 +412,7 @@ static void tmc_update_etr_buffer(struct coresight_device *csdev,
 	 */
 	status = readl_relaxed(drvdata->base + TMC_STS);
 	if (status & TMC_STS_FULL) {
-		perf_aux_output_flag(handle, PERF_AUX_FLAG_TRUNCATED);
+		lost = true;
 		to_read = drvdata->size;
 	} else {
 		to_read = CIRC_CNT(write_ptr, read_ptr, drvdata->size);
@@ -422,10 +424,7 @@ static void tmc_update_etr_buffer(struct coresight_device *csdev,
 	 * get the latest trace data.
 	 */
 	if (to_read > handle->size) {
-		u32 buffer_start, mask = 0;
-
-		/* Read buffer start address in system memory */
-		buffer_start = readl_relaxed(drvdata->base + TMC_DBALO);
+		u64 mask = 0;
 
 		/*
 		 * The value written to RRP must be byte-address aligned to
@@ -439,10 +438,10 @@ static void tmc_update_etr_buffer(struct coresight_device *csdev,
 		case TMC_MEM_INTF_WIDTH_32BITS:
 		case TMC_MEM_INTF_WIDTH_64BITS:
 		case TMC_MEM_INTF_WIDTH_128BITS:
-			mask = GENMASK(31, 5);
+			mask = GENMASK_ULL(63, 5);
 			break;
 		case TMC_MEM_INTF_WIDTH_256BITS:
-			mask = GENMASK(31, 6);
+			mask = GENMASK_ULL(63, 6);
 			break;
 		}
 
@@ -454,28 +453,60 @@ static void tmc_update_etr_buffer(struct coresight_device *csdev,
 		/* Move the RAM read pointer up */
 		read_ptr = (write_ptr + drvdata->size) - to_read;
 		/* Make sure we are still within our limits */
-		if (read_ptr > (buffer_start + (drvdata->size - 1)))
+		if (read_ptr > (drvdata->paddr + (drvdata->size - 1)))
 			read_ptr -= drvdata->size;
 		/* Tell the HW */
-		writel_relaxed(read_ptr, drvdata->base + TMC_RRP);
-		perf_aux_output_flag(handle, PERF_AUX_FLAG_TRUNCATED);
+		tmc_write_rrp(drvdata, read_ptr);
+		lost = true;
 	}
+
+	if (lost)
+		perf_aux_output_flag(handle, PERF_AUX_FLAG_TRUNCATED);
 
 	cur = buf->cur;
 	offset = buf->offset;
+	barrier = barrier_pkt;
 
-	/* for every byte to read */
-	for (i = 0; i < to_read; i += 4) {
+	if (lost) {
 		buf_ptr = buf->data_pages[cur] + offset;
-		*buf_ptr = readl_relaxed(drvdata->base + TMC_RRD);
+		while (*barrier) {
+			*buf_ptr = *barrier;
+			barrier++;
 
-		offset += 4;
+			offset += 4;
+			if (offset >= PAGE_SIZE) {
+				offset = 0;
+				cur++;
+				/* wrap around at the end of the buffer */
+				cur &= buf->nr_pages - 1;
+			}
+		}
+	}
+
+	/* Convert read pointer to buffer offset */
+	r_offset = read_ptr - drvdata->paddr;
+	to_copy = to_read;
+	while (to_copy > 0) {
+		/* Copy chunk that is minimum of data available,
+		 * data before ETR wrap point, space in output chunk */
+		u32 before_wrap = drvdata->size - r_offset;
+		u32 out_space = PAGE_SIZE - offset;
+		u32 this_chunk = min(min(to_copy, before_wrap), out_space);
+
+		memcpy(buf->data_pages[cur] + offset, drvdata->vaddr + r_offset, this_chunk);
+
+		to_copy -= this_chunk;
+		offset += this_chunk;
 		if (offset >= PAGE_SIZE) {
 			offset = 0;
 			cur++;
 			/* wrap around at the end of the buffer */
 			cur &= buf->nr_pages - 1;
 		}
+		r_offset += this_chunk;
+		if (r_offset >= drvdata->size)
+			/* Wrap to start of buffer */
+			r_offset -= drvdata->size;
 	}
 
 	/*
