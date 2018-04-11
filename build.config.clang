@@ -1,5 +1,5 @@
 ARCH=arm64
-BRANCH=mirror-aosp-android-hikey-linaro-4.9
+BRANCH=mirror-aosp-android-hikey-linaro-4.14
 CC=clang
 CLANG_TRIPLE=aarch64-linux-gnu-
 CROSS_COMPILE=aarch64-linux-android-
