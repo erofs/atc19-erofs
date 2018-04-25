@@ -156,6 +156,13 @@
 		};
 	};
 
+	pclk: apb_pclk {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <20000000>;
+		clock-output-names = "apb_pclk";
+	};
+
 	keys {
 		compatible = "gpio-keys";
 		pinctrl-names = "default";
