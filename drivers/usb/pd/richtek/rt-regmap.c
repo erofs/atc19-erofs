@@ -1084,7 +1084,7 @@ int rt_regmap_cache_init(struct rt_regmap_device *rd)
 
 	if (!rd->props.group) {
 		rd->props.group = devm_kzalloc(&rd->dev,
-				sizeof(rd->props.group), GFP_KERNEL);
+				sizeof(*rd->props.group), GFP_KERNEL);
 		rd->props.group[0].start = 0x00;
 		rd->props.group[0].end = 0xffff;
 		rd->props.group[0].mode = RT_1BYTE_MODE;
