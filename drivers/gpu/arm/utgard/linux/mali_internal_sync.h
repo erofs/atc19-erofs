@@ -85,7 +85,9 @@ struct mali_internal_sync_fence_cb {
 
 struct mali_internal_sync_fence {
 	struct file             *file;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
 	struct kref             kref;
+#endif
 	char		name[32];
 #ifdef CONFIG_DEBUG_FS
 	struct list_head	sync_file_list;
@@ -101,6 +103,7 @@ struct mali_internal_sync_fence {
 	struct fence *fence;
 	struct fence_cb cb;
 #else
+	unsigned long           flags;
 	struct dma_fence *fence;
 	struct dma_fence_cb cb;
 #endif
