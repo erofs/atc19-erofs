@@ -613,8 +613,6 @@ int dpe_init(struct dss_crtc *acrtc)
 
 	hisi_dss_mctl_mutex_unlock(acrtc->ctx);
 
-	enable_ldi(acrtc);
-
 	mdelay(60);
 
 	return 0;
