@@ -117,6 +117,17 @@
 				fragment@1 {
 					target-path="/firmware/android/fstab/vendor";
 					__overlay__ {
+						fsmgr_flags = "wait";
+						status = "ok";
+					};
+				};
+			};
+		};
+		hardware_cfg_enable_android_fstab_v2 {
+			overlay_0 {
+				fragment@0 {
+					target-path="/firmware/android/fstab/vendor";
+					__overlay__ {
 						status = "ok";
 					};
 				};
@@ -333,7 +344,7 @@
 					dev = "/dev/block/platform/soc/ff3b0000.ufs/by-name/vendor" ;
 					type = "ext4";
 					mnt_flags = "ro" ;
-					fsmgr_flags = "wait";
+					fsmgr_flags = "wait,verify";
 					status = "disabled";
 				};
 			};
