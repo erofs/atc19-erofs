@@ -1,0 +1,11 @@
+menu "Hisilicon trim options"
+
+config HISILICON_TRIM
+	depends on MAILBOX
+	depends on ARCH_HISI
+	bool "Hisilicon voltage trim"
+	default n
+	help
+	  Hisilicon voltage trim
+
+endmenu
