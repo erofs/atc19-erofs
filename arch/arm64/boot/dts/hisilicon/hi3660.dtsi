@@ -1144,7 +1144,7 @@
 			clock-names = "pcie_phy_ref", "pcie_aux",
 				      "pcie_apb_phy", "pcie_apb_sys",
 				      "pcie_aclk";
-			reset-gpio = <&gpio11 1 0 >;
+			reset-gpios = <&gpio11 1 0 >;
 		};
 
 		/* SD */
