@@ -219,6 +219,7 @@ struct ion_dma_buf_attachment {
 	struct device *dev;
 	struct sg_table *table;
 	struct list_head list;
+	enum dma_data_direction dir;
 };
 
 static int ion_dma_buf_attach(struct dma_buf *dmabuf, struct device *dev,
@@ -240,6 +241,7 @@ static int ion_dma_buf_attach(struct dma_buf *dmabuf, struct device *dev,
 
 	a->table = table;
 	a->dev = dev;
+	a->dir = DMA_NONE;
 	INIT_LIST_HEAD(&a->list);
 
 	attachment->priv = a;
@@ -270,12 +272,19 @@ static struct sg_table *ion_map_dma_buf(struct dma_buf_attachment *attachment,
 {
 	struct ion_dma_buf_attachment *a = attachment->priv;
 	struct sg_table *table;
+	unsigned long dma_attr = 0;
 
 	table = a->table;
 
-	if (!dma_map_sg(attachment->dev, table->sgl, table->nents,
-			direction))
-		return ERR_PTR(-ENOMEM);
+	if (a->dir == direction)
+		dma_attr = DMA_ATTR_SKIP_CPU_SYNC;
+
+	if (!dma_map_sg_attrs(attachment->dev, table->sgl, table->nents,
+			      direction,  dma_attr)) {
+		table = ERR_PTR(-ENOMEM);
+	} else {
+		a->dir = direction;
+	}
 
 	return table;
 }
@@ -284,7 +293,14 @@ static void ion_unmap_dma_buf(struct dma_buf_attachment *attachment,
 			      struct sg_table *table,
 			      enum dma_data_direction direction)
 {
-	dma_unmap_sg(attachment->dev, table->sgl, table->nents, direction);
+	struct ion_dma_buf_attachment *a = attachment->priv;
+	unsigned long dma_attr = 0;
+
+	if (direction == a->dir)
+		dma_attr = DMA_ATTR_SKIP_CPU_SYNC;
+
+	dma_unmap_sg_attrs(attachment->dev, table->sgl, table->nents,
+			   direction, dma_attr);
 }
 
 static int ion_mmap(struct dma_buf *dmabuf, struct vm_area_struct *vma)
