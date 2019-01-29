@@ -23,7 +23,7 @@
 #include "kirin_drm_dpe_utils.h"
 #include "kirin_drm_drv.h"
 
-#define ROUND1(x, y)	((x) / (y) + ((x) % (y)  ? 1 : 0))
+
 #define DSS_CHN_MAX_DEFINE (DSS_COPYBIT_MAX)
 static int mid_array[DSS_CHN_MAX_DEFINE] = {0xb, 0xa, 0x9, 0x8, 0x7, 0x6, 0x5, 0x4, 0x2, 0x1, 0x3, 0x0};
 
@@ -705,7 +705,6 @@ static int hisi_dss_rdma_config(struct dss_hw_ctx *ctx,
 	u32 afbcd_header_stride = 0;
 	u32 afbcd_payload_addr = 0;
 	u32 afbcd_payload_stride = 0;
-	u32 h_display = 0;
 
 	if (!ctx) {
 		DRM_ERROR("ctx is NULL!\n");
@@ -800,12 +799,7 @@ static int hisi_dss_rdma_config(struct dss_hw_ctx *ctx,
 		set_reg(rdma_base + CH_CTL, 0xf005, 32, 0);
 	} else {
 		stretch_size_vrt = rdma_oft_y1 - rdma_oft_y0;
-		h_display = (rect->right - rect->left) + 1;
-		if (h_display % 64) {
-			rdma_stride = ROUND1(h_display, 64) * 64 * bpp / DMA_ALIGN_BYTES;
-		} else {
-			rdma_stride = h_display * bpp / DMA_ALIGN_BYTES;
-		}
+		rdma_stride = ((rect->right - rect->left) + 1) * bpp / DMA_ALIGN_BYTES;
 
 		set_reg(rdma_base + CH_REG_DEFAULT, 0x1, 32, 0);
 		set_reg(rdma_base + CH_REG_DEFAULT, 0x0, 32, 0);
