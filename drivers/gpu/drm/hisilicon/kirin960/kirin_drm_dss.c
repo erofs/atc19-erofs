@@ -292,6 +292,19 @@ static void dss_crtc_atomic_disable(struct drm_crtc *crtc,
 	drm_crtc_vblank_off(crtc);
 }
 
+static bool dss_crtc_mode_fixup(struct drm_crtc *crtc,
+				const struct drm_display_mode *mode,
+				struct drm_display_mode *adjusted_mode)
+{
+	struct dss_crtc *acrtc = to_dss_crtc(crtc);
+	struct dss_hw_ctx *ctx = acrtc->ctx;
+
+	adjusted_mode->clock =
+		clk_round_rate(ctx->dss_pxl0_clk, mode->clock * 1000) / 1000;
+	return true;
+}
+
+
 static void dss_crtc_mode_set_nofb(struct drm_crtc *crtc)
 {
 	struct dss_crtc *acrtc = to_dss_crtc(crtc);
@@ -333,6 +346,7 @@ static void dss_crtc_atomic_flush(struct drm_crtc *crtc,
 static const struct drm_crtc_helper_funcs dss_crtc_helper_funcs = {
 	.atomic_enable	= dss_crtc_atomic_enable,
 	.atomic_disable	= dss_crtc_atomic_disable,
+	.mode_fixup     = dss_crtc_mode_fixup,
 	.mode_set_nofb	= dss_crtc_mode_set_nofb,
 	.atomic_begin	= dss_crtc_atomic_begin,
 	.atomic_flush	= dss_crtc_atomic_flush,

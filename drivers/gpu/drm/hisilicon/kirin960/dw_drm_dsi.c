@@ -1039,6 +1039,83 @@ static void dsi_encoder_enable(struct drm_encoder *encoder)
 	dsi->enable = true;
 }
 
+static enum drm_mode_status dsi_encoder_phy_mode_valid(
+					struct drm_encoder *encoder,
+					const struct drm_display_mode *mode)
+{
+	/* XXX HACK whitelist for now, to move it out of
+	 * common adv7511 code.  This should be replaced by
+	 * something closer to dsi_encoder_phy_mode_valid()
+	 * found in in:
+	 *   drivers/gpu/drm/hisilicon/kirin/dw_drm_dsi.c
+	 */
+	DRM_DEBUG_DRIVER("Checking mode %ix%i@%i clock: %i...",
+			mode->hdisplay, mode->vdisplay,
+			drm_mode_vrefresh(mode), mode->clock);
+	if ((mode->hdisplay == 1920 && mode->vdisplay == 1080 && mode->clock == 148500) ||
+	    (mode->hdisplay == 1920 && mode->vdisplay == 1080 && mode->clock == 80192)  ||
+	    (mode->hdisplay == 1920 && mode->vdisplay == 1080 && mode->clock == 74250)  ||
+	    (mode->hdisplay == 1920 && mode->vdisplay == 1080 && mode->clock == 61855)  ||
+	    (mode->hdisplay == 1680 && mode->vdisplay == 1050 && mode->clock == 147116) ||
+	    (mode->hdisplay == 1680 && mode->vdisplay == 1050 && mode->clock == 146250) ||
+	    (mode->hdisplay == 1680 && mode->vdisplay == 1050 && mode->clock == 144589) ||
+	    (mode->hdisplay == 1600 && mode->vdisplay == 1200 && mode->clock == 160961) ||
+	    (mode->hdisplay == 1600 && mode->vdisplay == 900  && mode->clock == 118963) ||
+	    (mode->hdisplay == 1440 && mode->vdisplay == 900  && mode->clock == 126991) ||
+	    (mode->hdisplay == 1280 && mode->vdisplay == 1024 && mode->clock == 128946) ||
+	    (mode->hdisplay == 1280 && mode->vdisplay == 1024 && mode->clock == 98619)  ||
+	    (mode->hdisplay == 1280 && mode->vdisplay == 960  && mode->clock == 102081) ||
+	    (mode->hdisplay == 1280 && mode->vdisplay == 800  && mode->clock == 83496)  ||
+	    (mode->hdisplay == 1280 && mode->vdisplay == 720  && mode->clock == 74440)  ||
+	    (mode->hdisplay == 1280 && mode->vdisplay == 720  && mode->clock == 74250)  ||
+	    (mode->hdisplay == 1024 && mode->vdisplay == 768  && mode->clock == 78800)  ||
+	    (mode->hdisplay == 1024 && mode->vdisplay == 768  && mode->clock == 75000)  ||
+	    (mode->hdisplay == 1024 && mode->vdisplay == 768  && mode->clock == 81833)  ||
+	    (mode->hdisplay == 1024 && mode->vdisplay == 600  && mode->clock == 50250)  ||
+	    (mode->hdisplay == 800  && mode->vdisplay == 600  && mode->clock == 48907)  ||
+	    (mode->hdisplay == 800  && mode->vdisplay == 600  && mode->clock == 40000)  ||
+	    (mode->hdisplay == 800  && mode->vdisplay == 480  && mode->clock == 32000)) {
+		DRM_DEBUG_DRIVER("OK\n");
+		return MODE_OK;
+	}
+	DRM_DEBUG_DRIVER("BAD\n");
+	return MODE_BAD;
+}
+
+static enum drm_mode_status dsi_encoder_mode_valid(struct drm_encoder *encoder,
+					const struct drm_display_mode *mode)
+
+{
+	struct drm_crtc *crtc = NULL;
+	struct drm_display_mode adj_mode;
+	enum drm_mode_status ret;
+
+	/*
+	 * The crtc might adjust the mode, so go through the
+	 * possible crtcs (technically just one) and call
+	 * mode_fixup to figure out the adjusted mode before we
+	 * validate it.
+	 */
+	drm_for_each_crtc(crtc, encoder->dev) {
+		/*
+		 * reset adj_mode to the mode value each time,
+		 * so we don't adjust the mode twice
+		 */
+		drm_mode_copy(&adj_mode, mode);
+
+		/* XXX - skip this as we're just using a whitelist
+		crtc_funcs = crtc->helper_private;
+		if (crtc_funcs && crtc_funcs->mode_fixup)
+			if (!crtc_funcs->mode_fixup(crtc, mode, &adj_mode))
+				return MODE_BAD;
+		*/
+		ret = dsi_encoder_phy_mode_valid(encoder, &adj_mode);
+		if (ret != MODE_OK)
+			return ret;
+	}
+	return MODE_OK;
+}
+
 static void dsi_encoder_mode_set(struct drm_encoder *encoder,
 				 struct drm_display_mode *mode,
 				 struct drm_display_mode *adj_mode)
@@ -1058,6 +1135,7 @@ static int dsi_encoder_atomic_check(struct drm_encoder *encoder,
 
 static const struct drm_encoder_helper_funcs dw_encoder_helper_funcs = {
 	.atomic_check	= dsi_encoder_atomic_check,
+	.mode_valid	= dsi_encoder_mode_valid,
 	.mode_set	= dsi_encoder_mode_set,
 	.enable		= dsi_encoder_enable,
 	.disable	= dsi_encoder_disable
