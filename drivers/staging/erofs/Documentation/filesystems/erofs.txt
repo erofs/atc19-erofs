@@ -65,6 +65,12 @@ fault_injection=%d     Enable fault injection in all supported types with
                        by default if CONFIG_EROFS_FS_XATTR is selected.
 (no)acl                Setup POSIX Access Control List. Note: acl is enabled
                        by default if CONFIG_EROFS_FS_POSIX_ACL is selected.
+compcache=%s           Control how to allocate decompression cached pages,
+                       which supports "tryalloc" and "delalloc" strategies.
+                       "tryalloc" stands for cached decompression without
+                                             direct reclaim (default)
+                       "delalloc" stands for delayed allocation just before
+                                             io submission (cached if possible)
 
 On-disk details
 ===============

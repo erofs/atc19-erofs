@@ -25,6 +25,8 @@
 enum z_erofs_cache_alloctype {
 	DONTALLOC,	/* don't allocate any cached pages */
 	DELAYEDALLOC,	/* delayed allocation (at the time of submitting io) */
+	TRYALLOC,	/* try to allocate or do in-place approach otherwise */
+			/* to prevent causing direct reclaim */
 };
 
 /*
@@ -174,12 +176,12 @@ static void preload_compressed_pages(struct z_erofs_vle_work_builder *bl,
 	if (bl->role < Z_EROFS_VLE_WORK_PRIMARY_FOLLOWED)
 		return;
 
-	gfp = mapping_gfp_constraint(mc, gfp) & ~__GFP_RECLAIM;
+	gfp = mapping_gfp_constraint(mc, gfp) & ~__GFP_DIRECT_RECLAIM;
 
 	index += clusterpages - remaining;
 
 	for (i = 0; i < remaining; ++i) {
-		struct page *page;
+		struct page *page, *newpage = NULL;
 		compressed_page_t t;
 
 		/* the compressed page was loaded before */
@@ -192,18 +194,33 @@ static void preload_compressed_pages(struct z_erofs_vle_work_builder *bl,
 			t = tag_compressed_page_justfound(page);
 		} else if (type == DELAYEDALLOC) {
 			t = tagptr_init(compressed_page_t, PAGE_UNALLOCATED);
+		} else if (type == TRYALLOC) {
+			gfp |= __GFP_NOMEMALLOC | __GFP_NORETRY | __GFP_NOWARN;
+
+			newpage = erofs_allocpage(pagepool, gfp, false, false);
+			if (!newpage)
+				goto fallback_noalloc;
+
+			newpage->mapping = Z_EROFS_MAPPING_PREALLOCATED;
+			t = tag_compressed_page_justfound(newpage);
 		} else {	/* DONTALLOC */
+fallback_noalloc:
 			if (standalone)
 				j = i;
 			standalone = false;
 			continue;
 		}
 
+		/* someone just changed for us, drop our attempt */
 		if (!cmpxchg_relaxed(&pages[i], NULL, tagptr_cast_ptr(t)))
 			continue;
 
-		if (page)
+		if (page) {
 			put_page(page);
+		} else if (newpage) {
+			newpage->mapping = NULL;
+			list_add(&newpage->lru, pagepool);
+		}
 	}
 	bl->compressed_pages += j;
 	bl->compressed_deficit = remaining - j;
@@ -747,10 +764,14 @@ restart_now:
 		goto err_out;
 
 	/* preload all compressed pages (maybe downgrade role if necessary) */
-	if (should_alloc_managed_pages(fe, map->m_la))
-		cache_strategy = DELAYEDALLOC;
-	else
+	if (should_alloc_managed_pages(fe, map->m_la)) {
+		if (test_opt(sbi, Z_CACHE_TRYALLOC))
+			cache_strategy = TRYALLOC;
+		else
+			cache_strategy = DELAYEDALLOC;
+	} else {
 		cache_strategy = DONTALLOC;
+	}
 
 	preload_compressed_pages(builder, MNGD_MAPPING(sbi),
 				 map->m_pa / PAGE_SIZE,
@@ -1188,6 +1209,11 @@ repeat:
 		goto out;
 	}
 
+	if (mapping == Z_EROFS_MAPPING_PREALLOCATED) {
+		WRITE_ONCE(grp->compressed_pages[nr], page);
+		goto out_to_managed_cache;
+	}
+
 	/*
 	 * unmanaged (file) pages are all locked solidly,
 	 * therefore it is impossible for `mapping' to be NULL.
@@ -1246,6 +1272,7 @@ out_allocpage:
 	}
 	if (nocache || !tocache)
 		goto out;
+out_to_managed_cache:
 	if (add_to_page_cache_lru(page, mc, index + nr, gfp)) {
 		page->mapping = Z_EROFS_MAPPING_STAGING;
 		goto out;

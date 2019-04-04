@@ -23,6 +23,12 @@
  */
 #define Z_EROFS_MAPPING_STAGING		((void *)0x5A110C8D)
 
+/*
+ *  - 0x6A110C8D ('pallocated', Z_EROFS_MAPPING_PREALLOCATED) -
+ * preallocated cached pages, and will be added into managed cache space
+ */
+#define Z_EROFS_MAPPING_PREALLOCATED	((void *)0x6A110C8D)
+
 #define z_erofs_is_stagingpage(page)	\
 	((page)->mapping == Z_EROFS_MAPPING_STAGING)
 

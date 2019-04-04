@@ -198,11 +198,36 @@ static unsigned int erofs_get_fault_rate(struct erofs_sb_info *sbi)
 }
 #endif
 
+static int handle_decompcache_args(struct erofs_sb_info *sbi,
+				   substring_t *args)
+{
+#ifdef EROFS_FS_HAS_MANAGED_CACHE
+	if (args->from) {
+		const int count = args->to - args->from;
+
+		if (!strncmp(args->from, "tryalloc", count)) {
+			set_opt(sbi, Z_CACHE_TRYALLOC);
+			return 0;
+		}
+		if (!strncmp(args->from, "delalloc", count)) {
+			clear_opt(sbi, Z_CACHE_TRYALLOC);
+			return 0;
+		}
+	}
+	return -EINVAL;
+#else
+	infoln("managed decompression cache disabled");
+#endif
+	return 0;
+}
+
 static void default_options(struct erofs_sb_info *sbi)
 {
 	/* set up some FS parameters */
 #ifdef CONFIG_EROFS_FS_ZIP
 	sbi->max_sync_decompress_pages = DEFAULT_MAX_SYNC_DECOMPRESS_PAGES;
+
+	set_opt(sbi, Z_CACHE_TRYALLOC);
 #endif
 
 #ifdef CONFIG_EROFS_FS_XATTR
@@ -220,6 +245,7 @@ enum {
 	Opt_acl,
 	Opt_noacl,
 	Opt_fault_injection,
+	Opt_decompcache,
 	Opt_err
 };
 
@@ -229,11 +255,13 @@ static match_table_t erofs_tokens = {
 	{Opt_acl, "acl"},
 	{Opt_noacl, "noacl"},
 	{Opt_fault_injection, "fault_injection=%u"},
+	{Opt_decompcache, "decompcache=%s"},
 	{Opt_err, NULL}
 };
 
 static int parse_options(struct super_block *sb, char *options)
 {
+	struct erofs_sb_info *const sbi = EROFS_SB(sb);
 	substring_t args[MAX_OPT_ARGS];
 	char *p;
 	int err;
@@ -253,10 +281,10 @@ static int parse_options(struct super_block *sb, char *options)
 		switch (token) {
 #ifdef CONFIG_EROFS_FS_XATTR
 		case Opt_user_xattr:
-			set_opt(EROFS_SB(sb), XATTR_USER);
+			set_opt(sbi, XATTR_USER);
 			break;
 		case Opt_nouser_xattr:
-			clear_opt(EROFS_SB(sb), XATTR_USER);
+			clear_opt(sbi, XATTR_USER);
 			break;
 #else
 		case Opt_user_xattr:
@@ -268,10 +296,10 @@ static int parse_options(struct super_block *sb, char *options)
 #endif
 #ifdef CONFIG_EROFS_FS_POSIX_ACL
 		case Opt_acl:
-			set_opt(EROFS_SB(sb), POSIX_ACL);
+			set_opt(sbi, POSIX_ACL);
 			break;
 		case Opt_noacl:
-			clear_opt(EROFS_SB(sb), POSIX_ACL);
+			clear_opt(sbi, POSIX_ACL);
 			break;
 #else
 		case Opt_acl:
@@ -282,11 +310,15 @@ static int parse_options(struct super_block *sb, char *options)
 			break;
 #endif
 		case Opt_fault_injection:
-			err = erofs_build_fault_attr(EROFS_SB(sb), args);
+			err = erofs_build_fault_attr(sbi, args);
 			if (err)
 				return err;
 			break;
-
+		case Opt_decompcache:
+			err = handle_decompcache_args(sbi, args);
+			if (err)
+				return err;
+			break;
 		default:
 			errln("Unrecognized mount option \"%s\" "
 					"or missing value", p);

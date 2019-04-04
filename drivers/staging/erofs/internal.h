@@ -179,6 +179,9 @@ static inline void *erofs_kmalloc(struct erofs_sb_info *sbi,
 #define EROFS_MOUNT_POSIX_ACL		0x00000020
 #define EROFS_MOUNT_FAULT_INJECTION	0x00000040
 
+/* Mount flags for decompression subsystem */
+#define EROFS_MOUNT_Z_CACHE_TRYALLOC	0x00010000
+
 #define clear_opt(sbi, option)	((sbi)->mount_opt &= ~EROFS_MOUNT_##option)
 #define set_opt(sbi, option)	((sbi)->mount_opt |= EROFS_MOUNT_##option)
 #define test_opt(sbi, option)	((sbi)->mount_opt & EROFS_MOUNT_##option)
