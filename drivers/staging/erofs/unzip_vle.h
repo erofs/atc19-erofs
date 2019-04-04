@@ -17,33 +17,10 @@
 #include "unzip_pagevec.h"
 
 /*
- *  - 0x5A110C8D ('sallocated', Z_EROFS_MAPPING_STAGING) -
- * used for temporary allocated pages (via erofs_allocpage),
- * in order to seperate those from NULL mapping (eg. truncated pages)
- */
-#define Z_EROFS_MAPPING_STAGING		((void *)0x5A110C8D)
-
-/*
  *  - 0x6A110C8D ('pallocated', Z_EROFS_MAPPING_PREALLOCATED) -
  * preallocated cached pages, and will be added into managed cache space
  */
 #define Z_EROFS_MAPPING_PREALLOCATED	((void *)0x6A110C8D)
-
-#define z_erofs_is_stagingpage(page)	\
-	((page)->mapping == Z_EROFS_MAPPING_STAGING)
-
-static inline bool z_erofs_gather_if_stagingpage(struct list_head *page_pool,
-						 struct page *page)
-{
-	if (z_erofs_is_stagingpage(page)) {
-		if (page_ref_count(page) > 1)
-			put_page(page);
-		else
-			list_add(&page->lru, page_pool);
-		return true;
-	}
-	return false;
-}
 
 /*
  * Structure fields follow one of the following exclusion rules.
@@ -219,19 +196,6 @@ static inline void z_erofs_onlinepage_endio(struct page *page)
 #define Z_EROFS_VLE_VMAP_ONSTACK_PAGES	\
 	min_t(unsigned int, THREAD_SIZE / 8 / sizeof(struct page *), 96U)
 #define Z_EROFS_VLE_VMAP_GLOBAL_PAGES	2048
-
-/* unzip_vle_lz4.c */
-int z_erofs_vle_plain_copy(struct page **compressed_pages,
-			   unsigned int clusterpages, struct page **pages,
-			   unsigned int nr_pages, unsigned short pageofs);
-int z_erofs_vle_unzip_fast_percpu(struct page **compressed_pages,
-				  unsigned int clusterpages,
-				  struct page **pages, unsigned int outlen,
-				  unsigned short pageofs);
-int z_erofs_vle_unzip_vmap(struct page **compressed_pages,
-			   unsigned int clusterpages,
-			   void *vaddr, unsigned int llen,
-			   unsigned short pageofs, bool overlapped);
 
 #endif
 

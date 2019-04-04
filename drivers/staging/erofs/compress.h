@@ -18,6 +18,26 @@
  */
 #define Z_EROFS_MAPPING_STAGING         ((void *)0x5A110C8D)
 
+/* check if a page is marked as staging */
+static inline bool z_erofs_page_is_staging(struct page *page)
+{
+	return page->mapping == Z_EROFS_MAPPING_STAGING;
+}
+
+static inline bool z_erofs_put_stagingpage(struct list_head *pagepool,
+					   struct page *page)
+{
+	if (!z_erofs_page_is_staging(page))
+		return false;
+
+	/* a staging page could have several references locally (no racy) */
+	if (page_ref_count(page) > 1)
+		put_page(page);
+	else
+		list_add(&page->lru, pagepool);
+	return true;
+}
+
 /* compression algorithm supported */
 #define Z_EROFS_COMPRESSION_SHIFTED	0
 #define Z_EROFS_COMPRESSION_LZ4		1
