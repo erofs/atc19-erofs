@@ -113,19 +113,127 @@ void erofs_put_pages_list(struct list_head *pool)
 	}
 }
 
-static struct pcpu_vm_area_set erofs_pcpuvmset;
+#if (EROFS_PCPUBUF_NR_PAGES > 0)
+static DEFINE_PER_CPU(void *, percpu_pagebuf);
+static DEFINE_PER_CPU(struct list_head, percpu_pagehead);
+
+void *erofs_get_pcpubuf(unsigned int pagenr)
+{
+	if (pagenr >= EROFS_PCPUBUF_NR_PAGES)
+		return ERR_PTR(-ERANGE);
+
+	return (char *)get_cpu_var(percpu_pagebuf) + pagenr * PAGE_SIZE;
+}
+
+int erofs_put_pcpubuf(void *buf, unsigned int pagenr)
+{
+	if (buf && *this_cpu_ptr(&percpu_pagebuf) + pagenr * PAGE_SIZE != buf)
+		return -EINVAL;
+
+	put_cpu_var(percpu_pagebuf);
+	return 0;
+}
+
+static int erofs_pcpubuf_cpu_prepare(unsigned int cpu)
+{
+	struct list_head *const list = &per_cpu(percpu_pagehead, cpu);
+	struct page *pages[EROFS_PCPUBUF_NR_PAGES];
+	void *ptr;
+	unsigned int i;
+
+	INIT_LIST_HEAD(list);
+	for (i = 0; i < EROFS_PCPUBUF_NR_PAGES; ++i) {
+		pages[i] = alloc_pages(GFP_KERNEL, 0);
+		if (!pages[i])
+			goto fail_nomem;
+		list_add_tail(&pages[i]->lru, list);
+	}
+
+	ptr = erofs_vmap(pages, EROFS_PCPUBUF_NR_PAGES);
+	if (!ptr)
+		goto fail_nomem;
+
+	per_cpu(percpu_pagebuf, cpu) = ptr;
+	return 0;
+fail_nomem:
+	while (i)
+		erofs_putpage(pages[--i]);
+	INIT_LIST_HEAD(list);
+	per_cpu(percpu_pagebuf, cpu) = NULL;
+	errln("failed to allocate pcpubuf for cpu %u", cpu);
+	return -ENOMEM;
+}
+
+static void erofs_pcpubuf_cpu_dead(unsigned int cpu)
+{
+	struct list_head *const list = &per_cpu(percpu_pagehead, cpu);
+	void **const pptr = &per_cpu(percpu_pagebuf, cpu);
+
+	erofs_vunmap(*pptr, EROFS_PCPUBUF_NR_PAGES);
+	if (list->next != list->prev)
+		erofs_put_pages_list(list);
+	*pptr = NULL;
+}
+#else
+void *erofs_get_pcpubuf(unsigned int pagenr) { return ERR_PTR(-ENOTSUPP); }
+int erofs_put_pcpubuf(void *buf, unsigned int pagenr) { return -ENOTSUPP; }
+static int erofs_pcpubuf_cpu_prepare(unsigned int cpu) { return 0; }
+static void erofs_pcpubuf_cpu_dead(unsigned int cpu) {}
+#endif
+
+static int erofs_cpu_prepare(unsigned int cpu)
+{
+	erofs_pcpubuf_cpu_prepare(cpu);
+	return 0;
+}
+
+static int erofs_cpu_dead(unsigned int cpu)
+{
+	erofs_pcpubuf_cpu_dead(cpu);
+	return 0;
+}
+
+static enum cpuhp_state hp_online;
+static struct pcpu_vm_set *erofs_pcpuvmset;
+
+unsigned int erofs_lock_pcpu_vm_area(unsigned int nr, unsigned pagesneeded)
+{
+	return lock_pcpu_vm_area(erofs_pcpuvmset, pagesneeded);
+}
+
+void erofs_unlock_pcpu_vm_area(unsigned int nr) {
+	return unlock_pcpu_vm_area(erofs_pcpuvmset);
+}
+
+void *erofs_map_pcpu_vm_area(unsigned int nr, struct page **pages,
+			     unsigned int nrpages)
+{
+	return map_pcpu_vm_area(erofs_pcpuvmset, pages, nrpages);
+}
 
 int __init erofs_register_pcpu_vm(void)
 {
+	int err;
+
 	erofs_pcpuvmset = register_pcpu_vm_area(32);
 
-	if (IS_ERR(erofs_pcpuvmaset))
-		return PTR_ERR(erofs_pcpuvmset));
+	if (IS_ERR(erofs_pcpuvmset))
+		return PTR_ERR(erofs_pcpuvmset);
+
+	err = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "fs/erofs:online",
+				erofs_cpu_prepare, erofs_cpu_dead);
+	if (err < 0) {
+		unregister_pcpu_vm_area(erofs_pcpuvmset);
+		return err;
+	}
+
+	hp_online = err;
 	return 0;
 }
 
 void erofs_unregister_pcpu_vm(void)
 {
+	cpuhp_remove_state(hp_online);
 	unregister_pcpu_vm_area(erofs_pcpuvmset);
 }
 
