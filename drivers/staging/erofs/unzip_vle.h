@@ -36,7 +36,10 @@ static inline bool z_erofs_gather_if_stagingpage(struct list_head *page_pool,
 						 struct page *page)
 {
 	if (z_erofs_is_stagingpage(page)) {
-		list_add(&page->lru, page_pool);
+		if (page_ref_count(page) > 1)
+			put_page(page);
+		else
+			list_add(&page->lru, page_pool);
 		return true;
 	}
 	return false;
