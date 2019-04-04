@@ -850,6 +850,9 @@ err_out:
 	goto out;
 }
 
+static bool z_erofs_vle_unzip_wq2(struct work_struct *work);
+
+
 static void z_erofs_vle_unzip_kickoff(void *ptr, int bios)
 {
 	tagptr1_t t = tagptr_init(tagptr1_t, ptr);
@@ -866,8 +869,10 @@ static void z_erofs_vle_unzip_kickoff(void *ptr, int bios)
 		return;
 	}
 
-	if (!atomic_add_return(bios, &io->pending_bios))
-		queue_work(z_erofs_workqueue, &io->u.work);
+	if (!atomic_add_return(bios, &io->pending_bios)) {
+		if (z_erofs_vle_unzip_wq2(&io->u.work))
+			queue_work(z_erofs_workqueue, &io->u.work);
+	}
 }
 
 static inline void z_erofs_vle_read_endio(struct bio *bio)
@@ -912,6 +917,120 @@ static inline void z_erofs_vle_read_endio(struct bio *bio)
 
 static struct page *z_pagemap_global[Z_EROFS_VLE_VMAP_GLOBAL_PAGES];
 static DEFINE_MUTEX(z_pagemap_global_lock);
+
+static int z_erofs_vle_unzip2(struct super_block *sb,
+			      struct z_erofs_vle_workgroup *grp,
+			      struct list_head *page_pool)
+{
+	struct erofs_sb_info *const sbi = EROFS_SB(sb);
+	const unsigned int clusterpages = erofs_clusterpages(sbi);
+	struct z_erofs_pagevec_ctor ctor;
+	struct page **compressed_pages;
+	struct z_erofs_vle_work *work =
+		 z_erofs_vle_grab_primary_work(grp);
+	unsigned int i;
+	struct page *pages_onstack[Z_EROFS_VLE_VMAP_ONSTACK_PAGES];
+
+	if (!mutex_trylock(&work->lock))
+		return -EAGAIN;
+
+	compressed_pages = grp->compressed_pages;
+
+	if (work->vcnt > Z_EROFS_VLE_VMAP_ONSTACK_PAGES) {
+		mutex_unlock(&work->lock);
+		return -EAGAIN;
+	}
+
+	for (i = 0; i < clusterpages; ++i) {
+		struct page *const page = compressed_pages[i];
+
+		if (erofs_page_is_managed(sbi, page))
+			continue;
+
+		if (!z_erofs_put_stagingpage(page_pool, page))
+			z_erofs_onlinepage_endio(page);
+		WRITE_ONCE(compressed_pages[i], NULL);
+	}
+
+	z_erofs_pagevec_ctor_init(&ctor, Z_EROFS_VLE_INLINE_PAGEVECS,
+				  work->pagevec, 0);
+
+	for (i = 0; i < work->vcnt; ++i) {
+		enum z_erofs_page_type page_type;
+		struct page *const page =
+			z_erofs_pagevec_ctor_dequeue(&ctor, &page_type);
+
+		if (z_erofs_put_stagingpage(page_pool, page)) {
+			pages_onstack[i] = NULL;
+			continue;
+		}
+		pages_onstack[i] = page;
+	}
+	z_erofs_pagevec_ctor_exit(&ctor, true);
+
+	for (i = 0; i < work->vcnt; ++i) {
+		if (pages_onstack[i])
+			z_erofs_onlinepage_endio(pages_onstack[i]);
+	}
+
+	work->nr_pages = 0;
+	work->vcnt = 0;
+
+	/* all work locks MUST be taken before the following line */
+
+	WRITE_ONCE(grp->next, Z_EROFS_VLE_WORKGRP_NIL);
+
+	/* all work locks SHOULD be released right now */
+	mutex_unlock(&work->lock);
+
+	z_erofs_vle_work_release(work);
+	return 0;
+}
+
+static bool z_erofs_vle_unzip_all2(struct super_block *sb,
+				  struct z_erofs_vle_unzip_io *io,
+				  struct list_head *page_pool)
+{
+	z_erofs_vle_owned_workgrp_t owned = io->head;
+
+	while (owned != Z_EROFS_VLE_WORKGRP_TAIL_CLOSED) {
+		struct z_erofs_vle_workgroup *grp;
+
+		/* no possible that 'owned' equals Z_EROFS_WORK_TPTR_TAIL */
+		DBG_BUGON(owned == Z_EROFS_VLE_WORKGRP_TAIL);
+
+		/* no possible that 'owned' equals NULL */
+		DBG_BUGON(owned == Z_EROFS_VLE_WORKGRP_NIL);
+
+		io->head = owned;
+		grp = container_of(owned, struct z_erofs_vle_workgroup, next);
+		owned = READ_ONCE(grp->next);
+
+		if (z_erofs_vle_unzip2(sb, grp, page_pool) == -EAGAIN)
+			return true;
+	}
+	return false;
+}
+
+static bool z_erofs_vle_unzip_wq2(struct work_struct *work)
+{
+	bool ret;
+	struct z_erofs_vle_unzip_io_sb *iosb = container_of(work,
+		struct z_erofs_vle_unzip_io_sb, io.u.work);
+	LIST_HEAD(page_pool);
+
+	if (!test_opt(EROFS_SB(iosb->sb), UDEF))
+		return true;
+
+	DBG_BUGON(iosb->io.head == Z_EROFS_VLE_WORKGRP_TAIL_CLOSED);
+	ret = z_erofs_vle_unzip_all2(iosb->sb, &iosb->io, &page_pool);
+
+	put_pages_list(&page_pool);
+	if (ret)
+		return true;
+	kvfree(iosb);
+	return false;
+}
 
 static int z_erofs_vle_unzip(struct super_block *sb,
 			     struct z_erofs_vle_workgroup *grp,
@@ -1045,6 +1164,9 @@ repeat:
 	if (unlikely(err))
 		goto out;
 
+	if (test_opt(sbi, UDEF2))
+		goto out;
+
 	dip = false;
 	if (nr_pages << PAGE_SHIFT >= work->pageofs + grp->llen) {
 		dip = (grp->flags & Z_EROFS_VLE_WORKGRP_ZIPPED_DIP);
@@ -1053,7 +1175,7 @@ repeat:
 		outputsize = (nr_pages << PAGE_SHIFT) - work->pageofs;
 	}
 
-	for (i = (work->pageofs ? 1 : 0); i < nr_pages; ++i) {
+	for (i = (work->pageofs && !test_opt(sbi, UDEF2) ? 1 : 0); i < nr_pages; ++i) {
 		page = pages[i];
 		if (page)
 			continue;
@@ -1071,6 +1193,9 @@ repeat:
 		z_erofs_onlinepage_init(page);
 		pages[i] = page;
 	}
+
+	if (test_opt(sbi, UDEF2))
+		goto out;
 
 	if (z_erofs_vle_workgrp_fmt(grp) == Z_EROFS_VLE_WORKGRP_FMT_PLAIN)
 		algorithm = Z_EROFS_COMPRESSION_SHIFTED;

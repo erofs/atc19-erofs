@@ -246,6 +246,8 @@ enum {
 	Opt_noacl,
 	Opt_fault_injection,
 	Opt_decompcache,
+	Opt_udef,
+	Opt_udef2,
 	Opt_err
 };
 
@@ -256,6 +258,8 @@ static match_table_t erofs_tokens = {
 	{Opt_noacl, "noacl"},
 	{Opt_fault_injection, "fault_injection=%u"},
 	{Opt_decompcache, "decompcache=%s"},
+	{Opt_udef, "udef"},
+	{Opt_udef2, "udef2"},
 	{Opt_err, NULL}
 };
 
@@ -318,6 +322,12 @@ static int parse_options(struct super_block *sb, char *options)
 			err = handle_decompcache_args(sbi, args);
 			if (err)
 				return err;
+			break;
+		case Opt_udef:
+			set_opt(EROFS_SB(sb), UDEF);
+			break;
+		case Opt_udef2:
+			set_opt(EROFS_SB(sb), UDEF2);
 			break;
 		default:
 			errln("Unrecognized mount option \"%s\" "
