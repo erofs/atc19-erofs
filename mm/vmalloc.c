@@ -1347,6 +1347,28 @@ void unmap_kernel_range(unsigned long addr, unsigned long size)
 }
 EXPORT_SYMBOL_GPL(unmap_kernel_range);
 
+/**
+ * unmap_kernel_range_local - unmap kernel VM area and flush cache and local TLB
+ * @addr: start of the VM area to unmap
+ * @size: size of the VM area to unmap
+ *
+ * Similar to unmap_kernel_range_noflush() but flushes vcache before
+ * the unmapping and local tlb after.
+ */
+void unmap_kernel_range_local(unsigned long addr, unsigned long size)
+{
+	unsigned long end = addr + size;
+
+	flush_cache_vunmap(addr, end);
+	vunmap_page_range(addr, end);
+#ifdef local_flush_tlb_kernel_range
+	local_flush_tlb_kernel_range(addr, end);
+#else
+	flush_tlb_kernel_range(addr, end);
+#endif
+}
+EXPORT_SYMBOL_GPL(unmap_kernel_range_local);
+
 int map_vm_area(struct vm_struct *area, pgprot_t prot, struct page **pages)
 {
 	unsigned long addr = (unsigned long)area->addr;
