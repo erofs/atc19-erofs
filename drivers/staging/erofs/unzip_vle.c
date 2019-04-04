@@ -635,7 +635,7 @@ z_erofs_vle_work_iter_end(struct z_erofs_vle_work_builder *builder)
 static inline struct page *__stagingpage_alloc(struct list_head *pagepool,
 					       gfp_t gfp)
 {
-	struct page *page = erofs_allocpage(pagepool, gfp);
+	struct page *page = erofs_allocpage(pagepool, gfp, false, true);
 
 	if (unlikely(!page))
 		return NULL;

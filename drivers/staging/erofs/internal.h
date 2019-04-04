@@ -599,7 +599,12 @@ static inline void erofs_vunmap(const void *mem, unsigned int count)
 /* utils.c */
 extern struct shrinker erofs_shrinker_info;
 
-struct page *erofs_allocpage(struct list_head *pool, gfp_t gfp);
+int __init erofs_bounce_pool_init(void);
+void erofs_bounce_pool_exit(void);
+struct page *erofs_allocpage(struct list_head *pool, gfp_t gfp,
+			     bool bounce, bool nofail);
+void erofs_putpage(struct page *page);
+void erofs_put_pages_list(struct list_head *pool);
 void erofs_register_super(struct super_block *sb);
 void erofs_unregister_super(struct super_block *sb);
 

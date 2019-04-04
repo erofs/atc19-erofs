@@ -12,19 +12,102 @@
  */
 
 #include "internal.h"
+#include <linux/module.h>
+#include <linux/mempool.h>
 #include <linux/pagevec.h>
 
-struct page *erofs_allocpage(struct list_head *pool, gfp_t gfp)
+static mempool_t *erofs_bounce_page_pool;
+static unsigned int bounce_max_rsvpages = 32;
+
+static int set_bounce_rsvpages(const char *val, const struct kernel_param *kp)
+{
+	int ret = param_set_uint(val, kp);
+
+	if (ret)
+		return ret;
+
+	if (!bounce_max_rsvpages)
+		mempool_destroy(erofs_bounce_page_pool);
+	else
+		mempool_resize(erofs_bounce_page_pool, bounce_max_rsvpages);
+	return 0;
+}
+
+module_param_call(num_rsvpages, set_bounce_rsvpages,
+		  param_get_uint, &bounce_max_rsvpages, 0644);
+__MODULE_PARM_TYPE(num_rsvpages, "uint");
+MODULE_PARM_DESC(num_rsvpages,
+ "Number of preallocated bounce pages which can be used temporarily");
+
+int erofs_bounce_pool_init(void)
+{
+	if (!bounce_max_rsvpages)
+		return 0;
+
+	erofs_bounce_page_pool =
+		mempool_create_page_pool(bounce_max_rsvpages, 0);
+	if (!erofs_bounce_page_pool)
+		return -ENOMEM;
+	return 0;
+}
+
+void erofs_bounce_pool_exit(void)
+{
+	if (!erofs_bounce_page_pool)
+		return;
+
+	mempool_destroy(erofs_bounce_page_pool);
+}
+
+struct page *erofs_allocpage(struct list_head *pool,
+			     gfp_t gfp, bool bounce, bool nofail)
 {
 	struct page *page;
 
 	if (!list_empty(pool)) {
 		page = lru_to_page(pool);
 		list_del(&page->lru);
-	} else {
-		page = alloc_pages(gfp | __GFP_NOFAIL, 0);
+		return page;
 	}
-	return page;
+	if (bounce && erofs_bounce_page_pool) {
+		/*
+		 * Don't sleep if no page in mempool since decompressor
+		 * can allocate multiple bounce pages at once and
+		 * it will cause unexpected blockings.
+		 */
+		page = mempool_alloc(erofs_bounce_page_pool,
+				     gfp & ~__GFP_DIRECT_RECLAIM);
+		if (page)
+			return page;
+	}
+	return alloc_pages(gfp | (nofail ? __GFP_NOFAIL : 0), 0);
+}
+
+void erofs_putpage(struct page *page)
+{
+	if (erofs_bounce_page_pool &&
+	    page_ref_count(page) == 1 && !page->mapping) {
+		mempool_free(page, erofs_bounce_page_pool);
+		return;
+	}
+	put_page(page);
+}
+
+void erofs_put_pages_list(struct list_head *pool)
+{
+	if (!erofs_bounce_page_pool) {
+		put_pages_list(pool);
+		return;
+	}
+
+	while (!list_empty(pool)) {
+		struct page *const page = lru_to_page(pool);
+
+		list_del(&page->lru);
+		DBG_BUGON(page_ref_count(page) != 1);
+		page->mapping = NULL;
+		mempool_free(page, erofs_bounce_page_pool);
+	}
 }
 
 /* global shrink count (for all mounted EROFS instances) */
