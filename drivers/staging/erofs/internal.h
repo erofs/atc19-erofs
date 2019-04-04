@@ -600,6 +600,8 @@ static inline void erofs_vunmap(const void *mem, unsigned int count)
 }
 
 /* utils.c */
+#define EROFS_NR_PERCPU_VMA     1
+
 extern struct shrinker erofs_shrinker_info;
 
 int __init erofs_bounce_pool_init(void);
@@ -608,6 +610,15 @@ struct page *erofs_allocpage(struct list_head *pool, gfp_t gfp,
 			     bool bounce, bool nofail);
 void erofs_putpage(struct page *page);
 void erofs_put_pages_list(struct list_head *pool);
+
+unsigned int erofs_lock_pcpu_vm_area(unsigned int nr, unsigned int pagesneeded);
+void erofs_unlock_pcpu_vm_area(unsigned int nr);
+void *erofs_map_pcpu_vm_area(unsigned int nr, struct page **pages,
+			     unsigned int nrpages);
+
+int __init erofs_register_pcpu_vm(void);
+void erofs_unregister_pcpu_vm(void);
+
 void erofs_register_super(struct super_block *sb);
 void erofs_unregister_super(struct super_block *sb);
 

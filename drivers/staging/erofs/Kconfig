@@ -91,6 +91,7 @@ config EROFS_FS_ZIP
 	bool "EROFS Data Compresssion Support"
 	depends on EROFS_FS
 	select LZ4_DECOMPRESS
+	select PCPU_VM
 	help
 	  Currently we support LZ4 VLE Compression only.
 	  Play at your own risk.

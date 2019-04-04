@@ -594,6 +594,10 @@ static int __init erofs_module_init(void)
 	erofs_check_ondisk_layout_definitions();
 	infoln("initializing erofs " EROFS_VERSION);
 
+	err = erofs_register_pcpu_vm();
+	if (err)
+		goto cpu_notifier_err;
+
 	err = erofs_init_inode_cache();
 	if (err)
 		goto icache_err;
@@ -626,6 +630,8 @@ bounce_err:
 shrinker_err:
 	erofs_exit_inode_cache();
 icache_err:
+	erofs_unregister_pcpu_vm();
+cpu_notifier_err:
 	return err;
 }
 
@@ -636,6 +642,7 @@ static void __exit erofs_module_exit(void)
 	erofs_bounce_pool_exit();
 	unregister_shrinker(&erofs_shrinker_info);
 	erofs_exit_inode_cache();
+	erofs_unregister_pcpu_vm();
 	infoln("successfully finalize erofs");
 }
 

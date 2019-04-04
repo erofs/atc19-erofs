@@ -14,7 +14,10 @@
 #include "internal.h"
 #include <linux/module.h>
 #include <linux/mempool.h>
+#include <linux/cpu.h>
+#include <linux/cpuhotplug.h>
 #include <linux/pagevec.h>
+#include <linux/pcpu-vm.h>
 
 static mempool_t *erofs_bounce_page_pool;
 static unsigned int bounce_max_rsvpages = 32;
@@ -108,6 +111,22 @@ void erofs_put_pages_list(struct list_head *pool)
 		page->mapping = NULL;
 		mempool_free(page, erofs_bounce_page_pool);
 	}
+}
+
+static struct pcpu_vm_area_set erofs_pcpuvmset;
+
+int __init erofs_register_pcpu_vm(void)
+{
+	erofs_pcpuvmset = register_pcpu_vm_area(32);
+
+	if (IS_ERR(erofs_pcpuvmaset))
+		return PTR_ERR(erofs_pcpuvmset));
+	return 0;
+}
+
+void erofs_unregister_pcpu_vm(void)
+{
+	unregister_pcpu_vm_area(erofs_pcpuvmset);
 }
 
 /* global shrink count (for all mounted EROFS instances) */
