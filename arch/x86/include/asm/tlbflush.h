@@ -567,6 +567,9 @@ extern void flush_tlb_all(void);
 extern void flush_tlb_mm_range(struct mm_struct *mm, unsigned long start,
 				unsigned long end, unsigned long vmflag);
 extern void flush_tlb_kernel_range(unsigned long start, unsigned long end);
+extern void local_flush_tlb_kernel_range(unsigned long start,
+					 unsigned long end);
+#define local_flush_tlb_kernel_range local_flush_tlb_kernel_range
 
 static inline void flush_tlb_page(struct vm_area_struct *vma, unsigned long a)
 {
