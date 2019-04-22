@@ -208,6 +208,7 @@ enum {
 	Z_EROFS_VLE_CLUSTER_TYPE_MAX
 };
 
+#define Z_EROFS_VLE_DI_ZIPPED_DIP               2
 #define Z_EROFS_VLE_DI_CLUSTER_TYPE_BITS        2
 #define Z_EROFS_VLE_DI_CLUSTER_TYPE_BIT         0
 

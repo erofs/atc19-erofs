@@ -16,8 +16,8 @@ struct z_erofs_decompressor {
 				   unsigned short pageofs_out,
 				   unsigned int outputsize,
 				   unsigned short pageofs_in,
-				   unsigned int inputsize);
-	void (*unmap_inplace_pages)(void *src);
+				   unsigned int inputsize, bool *dip);
+	void (*unmap_inplace_pages)(void *src, bool dip);
 	int (*decompress_partial)(const char *src, char *dst,
 				  unsigned int srclen, unsigned int dstlen);
 	char *name;
@@ -59,7 +59,7 @@ static void *generic_map_inplace_pages(struct page **out, struct page **in,
 				       unsigned short pageofs_out,
 				       unsigned int outputsize,
 				       unsigned short pageofs_in,
-				       unsigned int inputsize)
+				       unsigned int inputsize, bool *dip)
 {
 	/*
 	 * if in-place decompression is ongoing, those decompressed
@@ -82,7 +82,7 @@ static void *generic_map_inplace_pages(struct page **out, struct page **in,
 	return tmp;
 }
 
-static void generic_unmap_inplace_pages(void *src)
+static void generic_unmap_inplace_pages(void *src, bool dip)
 {
 	erofs_put_pcpubuf(src, 0);
 }
@@ -110,14 +110,43 @@ static int lz4_decompress_partial(const char *in, char *out,
 	return -EIO;
 }
 
+static void *lz4_map_inplace_pages(struct page **out, struct page **in,
+				   unsigned short pageofs_out,
+				   unsigned int outputsize,
+				   unsigned short pageofs_in,
+				   unsigned int inputsize, bool *dip)
+{
+	if (*dip) {
+		const unsigned int nrpages_out =
+			PAGE_ALIGN(pageofs_out + outputsize) >> PAGE_SHIFT;
+
+		if (out[nrpages_out - 1] == in[0])
+			return kmap_atomic(in[0]);
+
+		*dip = false;
+	}
+
+	return generic_map_inplace_pages(out, in, pageofs_out, outputsize,
+					 pageofs_in, inputsize, dip);
+}
+
+static void lz4_unmap_inplace_pages(void *src, bool dip)
+{
+	if (dip) {
+		kunmap_atomic(src);
+		return;
+	}
+	return generic_unmap_inplace_pages(src, dip);
+}
+
 static struct z_erofs_decompressor decompressors[] = {
 	[Z_EROFS_COMPRESSION_SHIFTED] = {
 		.name = "shifted"
 	},
 	[Z_EROFS_COMPRESSION_LZ4] = {
 		.prepare_bounce_pages = lz4_prepare_bounce_pages,
-		.map_inplace_pages = generic_map_inplace_pages,
-		.unmap_inplace_pages = generic_unmap_inplace_pages,
+		.map_inplace_pages = lz4_map_inplace_pages,
+		.unmap_inplace_pages = lz4_unmap_inplace_pages,
 		.decompress_partial = lz4_decompress_partial,
 		.name = "lz4"
 	},
@@ -160,7 +189,7 @@ static void copy_from_pcpubuf(struct page **out, const char *dst,
 
 static int decompress_generic(const struct z_erofs_decompress_handle *dh,
 			      struct list_head *pagepool, bool overlapped,
-			      bool sparsed)
+			      bool sparsed, bool dip)
 {
 	const unsigned int nrpages_out =
 		PAGE_ALIGN(dh->pageofs_out + dh->outputsize) >> PAGE_SHIFT;
@@ -215,14 +244,14 @@ static int decompress_generic(const struct z_erofs_decompress_handle *dh,
 
 	if (overlapped)
 		src = alg->map_inplace_pages(dh->out, dh->in, dh->pageofs_out,
-					     dh->outputsize, 0, PAGE_SIZE);
+					     dh->outputsize, 0, PAGE_SIZE, &dip);
 	else
 		src = kmap_atomic(*dh->in);
 
 	ret = alg->decompress_partial(src, dst + dh->pageofs_out,
 				      PAGE_SIZE, dh->outputsize);
 	if (overlapped)
-		alg->unmap_inplace_pages(src);
+		alg->unmap_inplace_pages(src, dip);
 	else
 		kunmap_atomic(src);
 
@@ -281,7 +310,7 @@ int z_erofs_decompress(unsigned int algorithm,
 		       struct page **in_pages, struct page **out_pages,
 		       unsigned int pageofs_out, unsigned int outputsize,
 		       struct list_head *pagepool,
-		       bool overlapped, bool sparsed)
+		       bool overlapped, bool sparsed, bool dip)
 {
 	const struct z_erofs_decompress_handle dh = {
 		.in = in_pages, .out = out_pages,
@@ -292,6 +321,6 @@ int z_erofs_decompress(unsigned int algorithm,
 
 	if (algorithm == Z_EROFS_COMPRESSION_SHIFTED)
 		return shifted_decompress(&dh, pagepool, overlapped);
-	return decompress_generic(&dh, pagepool, overlapped, sparsed);
+	return decompress_generic(&dh, pagepool, overlapped, sparsed, dip);
 }
 

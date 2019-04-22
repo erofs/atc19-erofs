@@ -486,6 +486,9 @@ z_erofs_vle_work_register(const struct z_erofs_vle_work_finder *f,
 				    Z_EROFS_VLE_WORKGRP_FMT_LZ4 :
 				    Z_EROFS_VLE_WORKGRP_FMT_PLAIN);
 
+	if (map->m_flags & Z_EROFS_MAP_ZIPPED_DIP)
+		grp->flags |= Z_EROFS_VLE_WORKGRP_ZIPPED_DIP;
+
 	/* new workgrps have been claimed as type 1 */
 	WRITE_ONCE(grp->next, *f->owned_head);
 	/* primary and followed work for all new workgrps */
@@ -923,7 +926,7 @@ static int z_erofs_vle_unzip(struct super_block *sb,
 	unsigned int i, outputsize;
 
 	enum z_erofs_page_type page_type;
-	bool overlapped;
+	bool overlapped, dip;
 	struct z_erofs_vle_work *work;
 	int err;
 
@@ -1031,7 +1034,13 @@ repeat:
 	if (unlikely(err))
 		goto out;
 
-	outputsize = min((nr_pages << PAGE_SHIFT) - work->pageofs, grp->llen);
+	dip = false;
+	if (nr_pages << PAGE_SHIFT >= work->pageofs + grp->llen) {
+		dip = (grp->flags & Z_EROFS_VLE_WORKGRP_ZIPPED_DIP);
+		outputsize = grp->llen;
+	} else {
+		outputsize = (nr_pages << PAGE_SHIFT) - work->pageofs;
+	}
 
 	if (z_erofs_vle_workgrp_fmt(grp) == Z_EROFS_VLE_WORKGRP_FMT_PLAIN)
 		algorithm = Z_EROFS_COMPRESSION_SHIFTED;
@@ -1040,7 +1049,7 @@ repeat:
 
 	err = z_erofs_decompress(algorithm, compressed_pages, pages,
 				 work->pageofs, outputsize, page_pool,
-				 overlapped, sparsemem_pages != nr_pages);
+				 overlapped, sparsemem_pages != nr_pages, dip);
 
 out:
 	/* must handle all compressed pages before endding pages */
@@ -1703,6 +1712,12 @@ vle_get_logical_extent_head(const struct vle_map_blocks_iter_ctx *ctx,
 	di = *ctx->kaddr_ret + vle_extent_blkoff(ctx->inode, lcn);
 
 	cluster_type = vle_cluster_type(di);
+
+	if ((*flags & Z_EROFS_MAP_FULL_MAPPED) &&
+	    cluster_type != Z_EROFS_VLE_CLUSTER_TYPE_PLAIN &&
+	    __vle_cluster_advise(di->di_advise, Z_EROFS_VLE_DI_ZIPPED_DIP, 1))
+		*flags |= Z_EROFS_MAP_ZIPPED_DIP;
+
 	switch (cluster_type) {
 	case Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD:
 		delta0 = le16_to_cpu(di->di_u.delta[0]);
@@ -1815,7 +1830,7 @@ int z_erofs_map_blocks_iter(struct inode *inode,
 	}
 
 	/* by default, compressed */
-	map->m_flags |= EROFS_MAP_ZIPPED;
+	map->m_flags = EROFS_MAP_ZIPPED;
 
 	end = ((u64)lcn + 1) * clustersize;
 
@@ -1846,6 +1861,7 @@ int z_erofs_map_blocks_iter(struct inode *inode,
 			goto unmap_out;
 		}
 		end = ((u64)lcn-- * clustersize) | logical_cluster_ofs;
+		map->m_flags |= Z_EROFS_MAP_FULL_MAPPED;
 		/* fallthrough */
 	case Z_EROFS_VLE_CLUSTER_TYPE_NONHEAD:
 		/* get the correspoinding first chunk */

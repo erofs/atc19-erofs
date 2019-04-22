@@ -16,6 +16,14 @@
 #include "internal.h"
 #include "unzip_pagevec.h"
 
+enum {
+	BH_FullMapped = BH_Zipped + 1,
+	BH_Zipped_DIP,
+};
+
+#define Z_EROFS_MAP_FULL_MAPPED         (1 << BH_FullMapped)
+#define Z_EROFS_MAP_ZIPPED_DIP          (1 << BH_Zipped_DIP)
+
 /*
  *  - 0x6A110C8D ('pallocated', Z_EROFS_MAPPING_PREALLOCATED) -
  * preallocated cached pages, and will be added into managed cache space
@@ -49,6 +57,7 @@ struct z_erofs_vle_work {
 	};
 };
 
+#define Z_EROFS_VLE_WORKGRP_ZIPPED_DIP       2
 #define Z_EROFS_VLE_WORKGRP_FMT_PLAIN        0
 #define Z_EROFS_VLE_WORKGRP_FMT_LZ4          1
 #define Z_EROFS_VLE_WORKGRP_FMT_MASK         1

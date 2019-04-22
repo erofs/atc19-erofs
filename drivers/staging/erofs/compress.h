@@ -46,7 +46,7 @@ int z_erofs_decompress(unsigned int algorithm,
 		       struct page **in_pages, struct page **out_pages,
 		       unsigned int pageofs_out, unsigned int outputsize,
 		       struct list_head *pagepool,
-		       bool overlapped, bool sparsed);
+		       bool overlapped, bool sparsed, bool dip);
 
 #endif
 
