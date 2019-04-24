@@ -112,6 +112,59 @@ err_out:
 	return ERR_PTR(err);
 }
 
+void erofs_ra_meta_pages(struct super_block *sb,
+			 erofs_blk_t blkaddr, unsigned nr_blks)
+{
+	struct inode *const bd_inode = sb->s_bdev->bd_inode;
+	struct address_space *const mapping = bd_inode->i_mapping;
+	const gfp_t gfp = readahead_gfp_mask(mapping) & ~__GFP_DIRECT_RECLAIM;
+	struct bio *bio = NULL;
+	bool force_submit = false;
+
+	for (; nr_blks; ++blkaddr, --nr_blks) {
+		int err;
+		struct page *page;
+
+		page = pagecache_get_page(mapping, blkaddr,
+					  FGP_LOCK | FGP_CREAT |
+					  FGP_NOFS | FGP_NOWAIT,
+					  gfp);
+
+		if (!page || PageUptodate(page)) {
+			if (page) {
+				unlock_page(page);
+				put_page(page);
+			}
+			force_submit = true;
+			continue;
+		}
+
+		if (bio && force_submit) {
+submit:
+			__submit_bio(bio, REQ_OP_READ, REQ_RAHEAD);
+			bio = NULL;
+			force_submit = false;
+		}
+
+		if (!bio) {
+			bio = erofs_grab_bio(sb, blkaddr, nr_blks,
+					     sb, read_endio, false);
+			if (IS_ERR(bio)) {
+				unlock_page(page);
+				put_page(page);
+				return;
+			}
+		}
+		err = bio_add_page(bio, page, PAGE_SIZE, 0);
+		if (err != PAGE_SIZE)
+			goto submit;
+		put_page(page);
+	}
+
+	if (bio)
+		__submit_bio(bio, REQ_OP_READ, REQ_RAHEAD);
+}
+
 static int erofs_map_blocks_flatmode(struct inode *inode,
 				     struct erofs_map_blocks *map,
 				     int flags)

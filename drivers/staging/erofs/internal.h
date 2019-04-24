@@ -524,6 +524,8 @@ static inline struct page *erofs_get_meta_page_nofail(struct super_block *sb,
 	return __erofs_get_meta_page(sb, blkaddr, prio, true);
 }
 
+void erofs_ra_meta_pages(struct super_block *sb,
+			 erofs_blk_t blkaddr, unsigned nr_blks);
 int erofs_map_blocks(struct inode *, struct erofs_map_blocks *, int);
 
 static inline struct page *

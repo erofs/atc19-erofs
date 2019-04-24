@@ -703,7 +703,7 @@ static int z_erofs_do_read_page(struct z_erofs_vle_frontend *fe,
 
 	enum z_erofs_cache_alloctype cache_strategy;
 	enum z_erofs_page_type page_type;
-	unsigned int cur, end, spiltted, index;
+	unsigned int cur, end, spiltted, index, flags;
 	int err = 0;
 
 	/* register locked file pages as online pages in pack */
@@ -726,12 +726,15 @@ repeat:
 	/* go ahead the next map_blocks */
 	debugln("%s: [out-of-range] pos %llu", __func__, offset + cur);
 
-	if (z_erofs_vle_work_iter_end(builder))
+	flags = 0;
+	if (z_erofs_vle_work_iter_end(builder)) {
+		flags |= Z_EROFS_GET_BLOCKS_BACKMOST;
 		fe->backmost = false;
+	}
 
 	map->m_la = offset + cur;
 	map->m_llen = 0;
-	err = z_erofs_map_blocks_iter(fe->inode, map, 0);
+	err = z_erofs_map_blocks_iter(fe->inode, map, flags);
 	if (unlikely(err))
 		goto err_out;
 
@@ -1816,8 +1819,13 @@ int z_erofs_map_blocks_iter(struct inode *inode,
 	map->m_plen = 1 << lclusterbits;
 	map->m_pa = blknr_to_addr(ei.pblk);
 	map->m_flags |= EROFS_MAP_MAPPED;
+
 unmap_out:
 	kunmap_atomic(ei.kaddr);
+
+	if (!err && (flags & Z_EROFS_GET_BLOCKS_BACKMOST) &&
+	    diloc(inode, inode->i_size >> lclusterbits, NULL) != eblk)
+		erofs_ra_meta_pages(sb, eblk + 1, 1);
 out:
 	debugln("%s, m_la %llu m_pa %llu m_llen %llu m_plen %llu m_flags 0%o",
 		__func__, map->m_la, map->m_pa,

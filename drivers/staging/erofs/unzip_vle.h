@@ -112,6 +112,8 @@ static inline void z_erofs_vle_set_workgrp_fmt(
 
 #define Z_EROFS_WORKGROUP_SIZE       sizeof(struct z_erofs_vle_workgroup)
 
+#define Z_EROFS_GET_BLOCKS_BACKMOST	0x10000
+
 struct z_erofs_vle_unzip_io {
 	atomic_t pending_bios;
 	z_erofs_vle_owned_workgrp_t head;
