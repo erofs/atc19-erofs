@@ -757,3 +757,11 @@ config PERCPU_STATS
 	  This feature collects and exposes statistics via debugfs. The
 	  information includes global and per chunk statistics, which can
 	  be used to help understand percpu memory usage.
+
+config PCPU_VM
+	bool "percpu vm allocator"
+	default n
+	help
+	  This feature allow to reserve continious virtual memory for each
+	  cpu and map physical pages to given percpu vm area.
+
