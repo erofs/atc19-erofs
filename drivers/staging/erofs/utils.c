@@ -20,7 +20,7 @@
 #include <linux/pcpu-vm.h>
 
 static mempool_t *erofs_bounce_page_pool;
-static unsigned int bounce_max_rsvpages = 32;
+static unsigned int bounce_max_rsvpages = 64;
 
 static int set_bounce_rsvpages(const char *val, const struct kernel_param *kp)
 {
@@ -215,7 +215,7 @@ int __init erofs_register_pcpu_vm(void)
 {
 	int err;
 
-	erofs_pcpuvmset = register_pcpu_vm_area(32);
+	erofs_pcpuvmset = register_pcpu_vm_area(256);
 
 	if (IS_ERR(erofs_pcpuvmset))
 		return PTR_ERR(erofs_pcpuvmset);
