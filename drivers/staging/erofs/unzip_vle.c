@@ -1202,9 +1202,15 @@ repeat:
 	else
 		algorithm = Z_EROFS_COMPRESSION_LZ4;
 
-	err = z_erofs_decompress(algorithm, compressed_pages, pages,
-				 work->pageofs, outputsize, page_pool,
-				 overlapped, sparsemem_pages != nr_pages, dip);
+	err = z_erofs_decompress(&(struct z_erofs_decompress_req) {
+					.in = compressed_pages,
+					.out = pages,
+					.pageofs_out = work->pageofs,
+					.outputsize = outputsize,
+					.alg = algorithm,
+					.inplace_io = overlapped,
+					.overlapped_decoding = dip,
+					.partial_decoding = true }, page_pool);
 
 out:
 	/* must handle all compressed pages before endding pages */

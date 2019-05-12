@@ -11,6 +11,19 @@
 
 #include "internal.h"
 
+struct z_erofs_decompress_req {
+	struct page **in, **out;
+
+	unsigned short pageofs_out;
+	unsigned int outputsize;
+
+	/* indicate the algorithm will be used for decompression */
+	unsigned int alg;
+
+	bool inplace_io;
+	bool overlapped_decoding, partial_decoding;
+};
+
 /*
  * - 0x5A110C8D ('sallocated', Z_EROFS_MAPPING_STAGING) -
  * used to mark temporary allocated pages from other
@@ -42,11 +55,8 @@ static inline bool z_erofs_put_stagingpage(struct list_head *pagepool,
 #define Z_EROFS_COMPRESSION_SHIFTED	0
 #define Z_EROFS_COMPRESSION_LZ4		1
 
-int z_erofs_decompress(unsigned int algorithm,
-		       struct page **in_pages, struct page **out_pages,
-		       unsigned int pageofs_out, unsigned int outputsize,
-		       struct list_head *pagepool,
-		       bool overlapped, bool sparsed, bool dip);
+int z_erofs_decompress(struct z_erofs_decompress_req *rq,
+		       struct list_head *pagepool);
 
 #endif
 
