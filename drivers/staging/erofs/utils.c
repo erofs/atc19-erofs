@@ -141,7 +141,6 @@ static int erofs_pcpubuf_cpu_prepare(unsigned int cpu)
 	void *ptr;
 	unsigned int i;
 
-	INIT_LIST_HEAD(list);
 	for (i = 0; i < EROFS_PCPUBUF_NR_PAGES; ++i) {
 		pages[i] = alloc_pages(GFP_KERNEL, 0);
 		if (!pages[i])
@@ -213,12 +212,16 @@ void *erofs_map_pcpu_vm_area(unsigned int nr, struct page **pages,
 
 int __init erofs_register_pcpu_vm(void)
 {
-	int err;
+	int err, cpu;
 
 	erofs_pcpuvmset = register_pcpu_vm_area(256);
 
 	if (IS_ERR(erofs_pcpuvmset))
 		return PTR_ERR(erofs_pcpuvmset);
+
+	for_each_possible_cpu(cpu) {
+		INIT_LIST_HEAD(&per_cpu(percpu_pagehead, cpu));
+	}
 
 	err = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "fs/erofs:online",
 				erofs_cpu_prepare, erofs_cpu_dead);

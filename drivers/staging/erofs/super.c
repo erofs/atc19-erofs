@@ -604,6 +604,10 @@ static int __init erofs_module_init(void)
 	erofs_check_ondisk_layout_definitions();
 	infoln("initializing erofs " EROFS_VERSION);
 
+	err = erofs_bounce_pool_init();
+	if (err)
+		goto bounce_err;
+
 	err = erofs_register_pcpu_vm();
 	if (err)
 		goto cpu_notifier_err;
@@ -615,10 +619,6 @@ static int __init erofs_module_init(void)
 	err = register_shrinker(&erofs_shrinker_info);
 	if (err)
 		goto shrinker_err;
-
-	err = erofs_bounce_pool_init();
-	if (err)
-		goto bounce_err;
 
 	err = z_erofs_init_zip_subsystem();
 	if (err)
@@ -634,14 +634,14 @@ static int __init erofs_module_init(void)
 fs_err:
 	z_erofs_exit_zip_subsystem();
 zip_err:
-	erofs_bounce_pool_exit();
-bounce_err:
 	unregister_shrinker(&erofs_shrinker_info);
 shrinker_err:
 	erofs_exit_inode_cache();
 icache_err:
 	erofs_unregister_pcpu_vm();
 cpu_notifier_err:
+	erofs_bounce_pool_exit();
+bounce_err:
 	return err;
 }
 
@@ -649,10 +649,10 @@ static void __exit erofs_module_exit(void)
 {
 	unregister_filesystem(&erofs_fs_type);
 	z_erofs_exit_zip_subsystem();
-	erofs_bounce_pool_exit();
 	unregister_shrinker(&erofs_shrinker_info);
 	erofs_exit_inode_cache();
 	erofs_unregister_pcpu_vm();
+	erofs_bounce_pool_exit();
 	infoln("successfully finalize erofs");
 }
 
