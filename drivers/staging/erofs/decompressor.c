@@ -208,7 +208,7 @@ static int decompress_generic(struct z_erofs_decompress_req *rq,
 	 * than PAGE_SIZE), memcpy the decompressed data rather than
 	 * compressed data is preferred.
 	 */
-	if (rq->outputsize <= PAGE_SIZE) {
+	if (rq->outputsize <= PAGE_SIZE * 7 / 8) {
 		dst = erofs_get_pcpubuf(0);
 
 		src = kmap_atomic(*rq->in);
@@ -236,7 +236,6 @@ static int decompress_generic(struct z_erofs_decompress_req *rq,
 		dst_maptype = 2;
 	} else {
 		erofs_unlock_pcpu_vm_area(0);
-
 		dst = erofs_vmap(rq->out, nrpages_out);
 		if (!dst)
 			return -ENOMEM;

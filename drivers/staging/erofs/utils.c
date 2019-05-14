@@ -117,6 +117,7 @@ void erofs_put_pages_list(struct list_head *pool)
 static DEFINE_PER_CPU(void *, percpu_pagebuf);
 static DEFINE_PER_CPU(struct list_head, percpu_pagehead);
 
+#if 0
 void *erofs_get_pcpubuf(unsigned int pagenr)
 {
 	if (pagenr >= EROFS_PCPUBUF_NR_PAGES)
@@ -133,6 +134,23 @@ int erofs_put_pcpubuf(void *buf, unsigned int pagenr)
 	put_cpu_var(percpu_pagebuf);
 	return 0;
 }
+#else
+static struct {
+	char data[PAGE_SIZE * 4];
+} ____cacheline_aligned_in_smp erofs_pcpubuf[NR_CPUS];
+
+void *erofs_get_pcpubuf(unsigned int pagenr)
+{
+	preempt_disable();
+	return (char *)erofs_pcpubuf[smp_processor_id()].data + pagenr * PAGE_SIZE;
+}
+
+int erofs_put_pcpubuf(void *buf, unsigned int pagenr)
+{
+	preempt_enable();	
+	return 0;
+}
+#endif
 
 static int erofs_pcpubuf_cpu_prepare(unsigned int cpu)
 {

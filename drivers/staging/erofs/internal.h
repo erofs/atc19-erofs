@@ -328,7 +328,7 @@ static inline void z_erofs_exit_zip_subsystem(void) {}
 /* page count of a compressed cluster */
 #define erofs_clusterpages(sbi)         ((1 << (sbi)->clusterbits) / PAGE_SIZE)
 
-#define EROFS_PCPUBUF_NR_PAGES		Z_EROFS_CLUSTER_MAX_PAGES
+#define EROFS_PCPUBUF_NR_PAGES		(Z_EROFS_CLUSTER_MAX_PAGES + 4)
 #else
 #define EROFS_PCPUBUF_NR_PAGES		0
 #endif
